@@ -34,6 +34,7 @@
 ```bash
 git clone https://github.com/your-username/autoly.git
 cd autoly
+```
 2. Install dependencies | Cài thư viện cần thiết
 bash
 Copy
