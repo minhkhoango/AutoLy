@@ -1,6 +1,7 @@
 import datetime
 import fitz
 import pandas as pd # Make sure pandas is imported
+import re
 import streamlit as st
 
 def safe_day(date_obj: datetime.date, slash=False) -> str:
@@ -30,7 +31,80 @@ def to_str(value) -> str:
         return ""
     return str(value)
 
-def fill_so_yeu_ly_lich(form_data):
+CURRENT_YEAR = datetime.date.today().year
+DATE_RE  = re.compile(fr"^(0?[1-9]|1[0-2])/((19\d{{2}})|(20[0-2]\d)|{CURRENT_YEAR})$")
+YEAR_RE  = re.compile(fr"^((19\d{{2}})|(20[0-2]\d)|{CURRENT_YEAR})$")
+
+def _ensure_df(obj) -> pd.DataFrame:
+    """Accept a DataFrame, a Streamlit data_editor payload, or any row/col dict."""
+    if isinstance(obj, pd.DataFrame):
+        return obj
+
+    # Streamlit payload shape: {"data": {col: list, ...}, ...}
+    if isinstance(obj, dict) and "data" in obj:
+        obj = obj["data"]
+
+    # now obj is a {col: list} dict that may be ragged -> pad it
+    max_len = max((len(v) for v in obj.values()), default=0)
+    padded = {k: v + [None]*(max_len - len(v)) for k, v in obj.items()}
+    return pd.DataFrame(padded)
+
+def validate_tables(
+    family_df: pd.DataFrame,
+    edu_df: pd.DataFrame,
+    work_df: pd.DataFrame,
+) -> list[str]:
+    """
+    Return a list of error strings. Empty list ⇒ everything is valid.
+    Raises no Streamlit calls, so you can unit-test it offline.
+    """
+    def _is_blank(val) -> bool:
+        return val is None or str(val).strip() == ""
+
+    def _validate_row(row: pd.Series, col_rules: dict[str, re.Pattern | None]):
+        for col, pattern in col_rules.items():
+            cell = str(row.get(col, "")).strip()
+            if _is_blank(cell):
+                yield f"🟥 '{col}' không được để trống."
+            elif pattern and not pattern.fullmatch(cell):
+                yield f"🟥 '{col}' sai định dạng: {cell}"
+
+    family_df = _ensure_df(family_df)
+    edu_df    = _ensure_df(edu_df)
+    work_df   = _ensure_df(work_df)
+
+    family_rules = {
+        "Quan hệ": None,
+        "Họ và tên": None,
+        "Năm sinh": YEAR_RE,
+        "Nghề nghiệp": None,
+        "Nơi công tác": None,
+    }
+    period_rules = {
+        "Từ (tháng/năm)": DATE_RE,
+        "Đến (tháng/năm)": DATE_RE,
+    }
+
+    errors: list[str] = []
+
+    for i, r in family_df.dropna(how="all").iterrows():
+        row_errs = list(_validate_row(r, family_rules))
+        if row_errs:
+            errors.append(f"**Gia đình – dòng {i+1}**:\n" + "  \n".join(row_errs))
+
+    for i, r in edu_df.dropna(how="all").iterrows():
+        row_errs = list(_validate_row(r, period_rules))
+        if row_errs:
+            errors.append(f"**Đào tạo – dòng {i+1}**:\n" + "  \n".join(row_errs))
+
+    for i, r in work_df.dropna(how="all").iterrows():
+        row_errs = list(_validate_row(r, period_rules))
+        if row_errs:
+            errors.append(f"**Công tác – dòng {i+1}**:\n" + "  \n".join(row_errs))
+
+    return errors
+
+def fill_so_yeu_ly_lich(form_data: dict):
     # Top-level personal info
     full_name         = to_str(form_data['full_name'])
     gender            = to_str(form_data['gender'])
@@ -100,7 +174,7 @@ def fill_so_yeu_ly_lich(form_data):
     page = doc[0]
     fontname = "TimesNewRoman"
     # Ensure the font file is in the specified path or a system-accessible location
-    fontfile = "font-times-new-roman/SVN-Times New Roman 2.ttf" # Check this path
+    fontfile = "font-times-new-roman\SVN-Times New Roman 2 italic.ttf" # Check this path
 
     try:
         page.insert_font(fontname=fontname, fontfile=fontfile)
@@ -209,7 +283,7 @@ def fill_so_yeu_ly_lich(form_data):
 
     # --- 19. Học vị, học hàm ---------------------------------------------
     in_stylized_text((337, 68), academic_title)
-    in_stylized_text((460, 68), safe_year(academic_year))
+    in_stylized_text((460, 68), academic_year)
 
     # --- 20. Khen thưởng ------------------------------------------------
     in_stylized_text((161, 91), awards)
