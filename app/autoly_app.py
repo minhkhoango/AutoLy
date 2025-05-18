@@ -290,9 +290,9 @@ with st.form("syll_form"):
 
 
     # 20‑22. Khen thưởng / Kỷ luật / Sở trường
-    awards = st.text_area("20. Khen thưởng", placeholder="VD: Giấy khen học tập tốt")
-    discipline = st.text_area("21. Kỷ luật", placeholder="VD: Không / Cảnh cáo / …")
-    strengths = st.text_area("22. Sở trường",placeholder="VD: Giao tiếp, Làm việc nhóm, Tin học văn phòng")
+    awards = st.text_area("20. Khen thưởng **(tùy chọn)**", placeholder="VD: Giấy khen học tập tốt")
+    discipline = st.text_area("21. Kỷ luật **(tùy chọn)**", placeholder="VD: Không / Cảnh cáo / …")
+    strengths = st.text_area("22. Sở trường **(tùy chọn)**",placeholder="VD: Giao tiếp, Làm việc nhóm, Tin học văn phòng")
 
     st.markdown("---")
 
@@ -310,30 +310,36 @@ with st.form("syll_form"):
         family_template, num_rows="dynamic", key="family_editor", use_container_width=True
     )
 
-    # Validate family relationships data
     family_valid = True
-    if st.session_state.form_attempted_submission and len(family_df) > 0:
-        # Check for empty required fields in family data
-        for idx, row in family_df.iterrows():
-            if pd.isna(row["Quan hệ"]) or row["Quan hệ"].strip() == "":
+    if len(family_df) == 0:
+        if st.session_state.form_attempted_submission:
+            st.error(f' ⚠️ Vui lòng điền Quá trình đào tạo, bồi dưỡng')
+        family_valid = False
+
+    # Validate family relationships data
+    # Check for empty required fields in family data
+    for idx, row in family_df.iterrows():
+        if pd.isna(row["Quan hệ"]) or row["Quan hệ"].strip() == "":
+            if st.session_state.form_attempted_submission:
                 st.error(f" ⚠️ Hàng {idx+1}: Quan hệ không được để trống")
-                family_valid = False
-            
-            if pd.isna(row["Họ và tên"]) or row["Họ và tên"].strip() == "":
+            family_valid = False
+        
+        if pd.isna(row["Họ và tên"]) or row["Họ và tên"].strip() == "":
+            if st.session_state.form_attempted_submission:
                 st.error(f" ⚠️ Hàng {idx+1}: Họ và tên không được để trống")
-                family_valid = False
-            
-            # Validate year of birth - must be numeric and reasonable
-            if not pd.isna(row["Năm sinh"]) and row["Năm sinh"].strip() != "":
-                try:
-                    birth_year = int(row["Năm sinh"])
-                    current_year = date.today().year
-                    if birth_year < 1900 or birth_year > current_year:
-                        st.error(f" ⚠️ Hàng {idx+1}: Năm sinh phải từ 1900 đến {current_year}")
-                        family_valid = False
-                except ValueError:
-                    st.error(f" ⚠️ Hàng {idx+1}: Năm sinh phải là số")
+            family_valid = False
+        
+        # Validate year of birth - must be numeric and reasonable
+        if not pd.isna(row["Năm sinh"]) and row["Năm sinh"].strip() != "":
+            try:
+                birth_year = int(row["Năm sinh"])
+                current_year = date.today().year
+                if birth_year < 1900 or birth_year > current_year:
+                    st.error(f" ⚠️ Hàng {idx+1}: Năm sinh phải từ 1900 đến {current_year}")
                     family_valid = False
+            except ValueError:
+                st.error(f" ⚠️ Hàng {idx+1}: Năm sinh phải là số")
+                family_valid = False
 
     validation_flags.append(family_valid)
 
@@ -342,6 +348,7 @@ with st.form("syll_form"):
 
     # III. Quá trình đào tạo
     st.markdown("### III. Quá trình đào tạo, bồi dưỡng")
+        
     edu_template = pd.DataFrame({
         "Từ (tháng/năm)":           pd.Series(dtype="string"),
         "Đến (tháng/năm)":          pd.Series(dtype="string"),
@@ -358,45 +365,53 @@ with st.form("syll_form"):
     edu_valid = True
     date_pattern = re.compile(r'^(0?[1-9]|1[0-2])/\d{4}$')  # MM/YYYY format
 
-    if st.session_state.form_attempted_submission and len(edu_df) > 0:
-        for idx, row in edu_df.iterrows():
-            # Check date format and range
-            if pd.isna(row["Từ (tháng/năm)"]) or row["Từ (tháng/năm)"].strip() == "":
+    if len(edu_df) == 0:
+        if st.session_state.form_attempted_submission:
+            st.error(f' ⚠️ Vui lòng điền Quá trình đào tạo, bồi dưỡng')
+        edu_valid = False
+
+    for idx, row in edu_df.iterrows():
+        # Check date format and range
+        if pd.isna(row["Từ (tháng/năm)"]) or row["Từ (tháng/năm)"].strip() == "":
+            if st.session_state.form_attempted_submission:
                 st.error(f" ⚠️ Đào tạo {idx+1}: Thời gian bắt đầu không được để trống")
-                edu_valid = False
-            elif not date_pattern.match(row["Từ (tháng/năm)"]):
-                st.error(f" ⚠️ Đào tạo {idx+1}: Thời gian bắt đầu phải theo định dạng MM/YYYY (VD: 09/2015)")
-                edu_valid = False
-            
-            if pd.isna(row["Đến (tháng/năm)"]) or row["Đến (tháng/năm)"].strip() == "":
+            edu_valid = False
+        elif not date_pattern.match(row["Từ (tháng/năm)"]):
+            st.error(f" ⚠️ Đào tạo {idx+1}: Thời gian bắt đầu phải theo định dạng MM/YYYY (VD: 09/2015)")
+            edu_valid = False
+        
+        if pd.isna(row["Đến (tháng/năm)"]) or row["Đến (tháng/năm)"].strip() == "":
+            if st.session_state.form_attempted_submission:
                 st.error(f" ⚠️ Đào tạo {idx+1}: Thời gian kết thúc không được để trống")
-                edu_valid = False
-            elif not date_pattern.match(row["Đến (tháng/năm)"]):
-                st.error(f" ⚠️ Đào tạo {idx+1}: Thời gian kết thúc phải theo định dạng MM/YYYY (VD: 06/2019)")
-                edu_valid = False
+            edu_valid = False
+        elif not date_pattern.match(row["Đến (tháng/năm)"]):
+            st.error(f" ⚠️ Đào tạo {idx+1}: Thời gian kết thúc phải theo định dạng MM/YYYY (VD: 06/2019)")
+            edu_valid = False
+        
+        # Validate start date is before end date
+        if not pd.isna(row["Từ (tháng/năm)"]) and not pd.isna(row["Đến (tháng/năm)"]) and \
+        date_pattern.match(row["Từ (tháng/năm)"]) and date_pattern.match(row["Đến (tháng/năm)"]):
+            start_parts = row["Từ (tháng/năm)"].split('/')
+            end_parts = row["Đến (tháng/năm)"].split('/')
             
-            # Validate start date is before end date
-            if not pd.isna(row["Từ (tháng/năm)"]) and not pd.isna(row["Đến (tháng/năm)"]) and \
-            date_pattern.match(row["Từ (tháng/năm)"]) and date_pattern.match(row["Đến (tháng/năm)"]):
-                start_parts = row["Từ (tháng/năm)"].split('/')
-                end_parts = row["Đến (tháng/năm)"].split('/')
-                
-                start_date = int(start_parts[1]) * 12 + int(start_parts[0])
-                end_date = int(end_parts[1]) * 12 + int(end_parts[0])
-                
-                if start_date > end_date:
-                    st.error(f" ⚠️ Đào tạo {idx+1}: Thời gian bắt đầu phải trước thời gian kết thúc")
-                    edu_valid = False
+            start_date = int(start_parts[1]) * 12 + int(start_parts[0])
+            end_date = int(end_parts[1]) * 12 + int(end_parts[0])
             
-            # Check school/institution name
-            if pd.isna(row["Trường / Cơ sở đào tạo"]) or row["Trường / Cơ sở đào tạo"].strip() == "":
+            if start_date > end_date:
+                st.error(f" ⚠️ Đào tạo {idx+1}: Thời gian bắt đầu phải trước thời gian kết thúc")
+                edu_valid = False
+        
+        # Check school/institution name
+        if pd.isna(row["Trường / Cơ sở đào tạo"]) or row["Trường / Cơ sở đào tạo"].strip() == "":
+            if st.session_state.form_attempted_submission:
                 st.error(f" ⚠️ Đào tạo {idx+1}: Trường/Cơ sở đào tạo không được để trống")
-                edu_valid = False
-            
-            # Check degree/certificate
-            if pd.isna(row["Văn bằng / Chứng chỉ"]) or row["Văn bằng / Chứng chỉ"].strip() == "":
+            edu_valid = False
+        
+        # Check degree/certificate
+        if pd.isna(row["Văn bằng / Chứng chỉ"]) or row["Văn bằng / Chứng chỉ"].strip() == "":
+            if st.session_state.form_attempted_submission:
                 st.error(f" ⚠️ Đào tạo {idx+1}: Văn bằng/Chứng chỉ không được để trống")
-                edu_valid = False
+            edu_valid = False
 
     validation_flags.append(edu_valid)
 
@@ -404,7 +419,7 @@ with st.form("syll_form"):
 
 
     # IV. Quá trình công tác
-    st.markdown("### IV. Quá trình công tác")
+    st.markdown("### IV. Quá trình công tác **(tùy chọn)**")
     work_template = pd.DataFrame({
         "Từ (tháng/năm)":    pd.Series(dtype="string"),
         "Đến (tháng/năm)":   pd.Series(dtype="string"),
@@ -417,45 +432,47 @@ with st.form("syll_form"):
 
     # Validate work history data
     work_valid = True
-    if st.session_state.form_attempted_submission and len(work_df) > 0:
-        for idx, row in work_df.iterrows():
-            # Check date format and range
-            if pd.isna(row["Từ (tháng/năm)"]) or row["Từ (tháng/năm)"].strip() == "":
+    for idx, row in work_df.iterrows():
+        # Check date format and range
+        if pd.isna(row["Từ (tháng/năm)"]) or row["Từ (tháng/năm)"].strip() == "":
+            if st.session_state.form_attempted_submission:
                 st.error(f" ⚠️ Công tác {idx+1}: Thời gian bắt đầu không được để trống")
+            work_valid = False
+        elif not date_pattern.match(row["Từ (tháng/năm)"]):
+            st.error(f" ⚠️ Công tác {idx+1}: Thời gian bắt đầu phải theo định dạng MM/YYYY (VD: 09/2015)")
+            work_valid = False
+        
+        # End date can be empty if it's current job
+        if not pd.isna(row["Đến (tháng/năm)"]) and row["Đến (tháng/năm)"].strip() != "" and \
+        not date_pattern.match(row["Đến (tháng/năm)"]):
+            if row["Đến (tháng/năm)"].lower() != "hiện tại" and row["Đến (tháng/năm)"].lower() != "nay":
+                st.error(f" ⚠️ Công tác {idx+1}: Thời gian kết thúc phải để trống, ghi 'Hiện tại', hoặc theo định dạng MM/YYYY")
                 work_valid = False
-            elif not date_pattern.match(row["Từ (tháng/năm)"]):
-                st.error(f" ⚠️ Công tác {idx+1}: Thời gian bắt đầu phải theo định dạng MM/YYYY (VD: 09/2015)")
+        
+        # Validate start date is before end date
+        if not pd.isna(row["Từ (tháng/năm)"]) and not pd.isna(row["Đến (tháng/năm)"]) and \
+        date_pattern.match(row["Từ (tháng/năm)"]) and date_pattern.match(row["Đến (tháng/năm)"]):
+            start_parts = row["Từ (tháng/năm)"].split('/')
+            end_parts = row["Đến (tháng/năm)"].split('/')
+            
+            start_date = int(start_parts[1]) * 12 + int(start_parts[0])
+            end_date = int(end_parts[1]) * 12 + int(end_parts[0])
+            
+            if start_date > end_date:
+                st.error(f" ⚠️ Công tác {idx+1}: Thời gian bắt đầu phải trước thời gian kết thúc")
                 work_valid = False
-            
-            # End date can be empty if it's current job
-            if not pd.isna(row["Đến (tháng/năm)"]) and row["Đến (tháng/năm)"].strip() != "" and \
-            not date_pattern.match(row["Đến (tháng/năm)"]):
-                if row["Đến (tháng/năm)"].lower() != "hiện tại" and row["Đến (tháng/năm)"].lower() != "nay":
-                    st.error(f" ⚠️ Công tác {idx+1}: Thời gian kết thúc phải để trống, ghi 'Hiện tại', hoặc theo định dạng MM/YYYY")
-                    work_valid = False
-            
-            # Validate start date is before end date
-            if not pd.isna(row["Từ (tháng/năm)"]) and not pd.isna(row["Đến (tháng/năm)"]) and \
-            date_pattern.match(row["Từ (tháng/năm)"]) and date_pattern.match(row["Đến (tháng/năm)"]):
-                start_parts = row["Từ (tháng/năm)"].split('/')
-                end_parts = row["Đến (tháng/năm)"].split('/')
-                
-                start_date = int(start_parts[1]) * 12 + int(start_parts[0])
-                end_date = int(end_parts[1]) * 12 + int(end_parts[0])
-                
-                if start_date > end_date:
-                    st.error(f" ⚠️ Công tác {idx+1}: Thời gian bắt đầu phải trước thời gian kết thúc")
-                    work_valid = False
-            
-            # Check organization
-            if pd.isna(row["Đơn vị công tác"]) or row["Đơn vị công tác"].strip() == "":
-                st.error(f" ⚠️ Công tác {idx+1}: Đơn vị công tác không được để trống")
-                work_valid = False
-            
-            # Check position
-            if pd.isna(row["Chức vụ"]) or row["Chức vụ"].strip() == "":
-                st.error(f" ⚠️ Công tác {idx+1}: Chức vụ không được để trống")
-                work_valid = False
+        
+        # Check organization
+        if pd.isna(row["Đơn vị công tác"]) or row["Đơn vị công tác"].strip() == "":
+            # if st.session_state.form_attempted_submission:
+            st.error(f" ⚠️ Công tác {idx+1}: Đơn vị công tác không được để trống")
+            work_valid = False
+        
+        # Check position
+        if pd.isna(row["Chức vụ"]) or row["Chức vụ"].strip() == "":
+            # if st.session_state.form_attempted_submission:
+            st.error(f" ⚠️ Công tác {idx+1}: Chức vụ không được để trống")
+            work_valid = False
 
     validation_flags.append(work_valid)
 

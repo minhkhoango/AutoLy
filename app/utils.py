@@ -4,6 +4,7 @@ import pandas as pd # Make sure pandas is imported
 import re
 import streamlit as st
 
+
 def safe_day(date_obj: datetime.date, slash=False) -> str:
     return_str = ''
     if pd.isna(date_obj): # Handle if date_obj itself might be NA (though less likely for date types from streamlit)
@@ -87,10 +88,14 @@ def fill_so_yeu_ly_lich(form_data: dict):
     edu_df            = form_data['edu_df']
     work_df           = form_data['work_df']
 
+    pdf_template_dir = 'assets/Mau-so-yeu-ly-lich-2.pdf'
+    pdf_saved_dir = 'assets/Mau-so-yeu-ly-lich-2_filled.pdf'
+    fontfile_dir = 'assets/SVN-Times New Roman 2 italic.ttf'
+    fontname = "TimesNewRoman"
     # Open the original template
     # Ensure the template PDF file is in the same directory or provide the full path
     try:
-        doc = fitz.open('Mau-so-yeu-ly-lich-2-copy.pdf')
+        doc = fitz.open(pdf_template_dir)
     except Exception as e:
         print(f"Error opening PDF template: {e}")
         # Optionally, re-raise or handle as appropriate for your Streamlit app
@@ -99,12 +104,9 @@ def fill_so_yeu_ly_lich(form_data: dict):
         return
 
     page = doc[0]
-    fontname = "TimesNewRoman"
-    # Ensure the font file is in the specified path or a system-accessible location
-    fontfile = "font-times-new-roman\SVN-Times New Roman 2 italic.ttf" # Check this path
 
     try:
-        page.insert_font(fontname=fontname, fontfile=fontfile)
+        page.insert_font(fontname=fontname, fontfile=fontfile_dir)
     except Exception as e:
         print(f"Error inserting font: {e}. Using default font.")
         # Fallback or further error handling if font is critical
@@ -196,14 +198,14 @@ def fill_so_yeu_ly_lich(form_data: dict):
     if len(doc) > 1:
         page = doc[1]
         try:
-            page.insert_font(fontname=fontname, fontfile=fontfile)
+            page.insert_font(fontname=fontname, fontfile=fontfile_dir)
         except Exception as e:
             print(f"Error inserting font on page 2: {e}. Using default font.")
             fontname = "helv" # Fallback for page 2 as well
     else:
         print("Warning: PDF has only one page. Content for page 2 will not be added.")
         # Decide how to handle this: maybe save and return, or skip page 2 content
-        doc.save("Mau-so-yeu-ly-lich-2_filled.pdf")
+        doc.save(pdf_saved_dir)
         print("PDF saved (single page).")
         return
 
