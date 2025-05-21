@@ -1,8 +1,6 @@
 import datetime
 import fitz
 import pandas as pd # Make sure pandas is imported
-import re
-import streamlit as st
 
 
 def safe_day(date_obj: datetime.date, slash=False) -> str:
@@ -32,7 +30,7 @@ def to_str(value) -> str:
         return ""
     return str(value)
 
-def fill_so_yeu_ly_lich(form_data: dict):
+def fill_so_yeu_ly_lich(form_data: dict) -> bytes:
     # Top-level personal info
     full_name         = to_str(form_data['full_name'])
     gender            = to_str(form_data['gender'])
