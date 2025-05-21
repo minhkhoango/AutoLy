@@ -6,7 +6,8 @@ import streamlit as st
 from datetime import date
 import pandas as pd
 from utils import fill_so_yeu_ly_lich
-from custom_selectbox import *
+import validation as vl
+import custom_selectbox as cbox
 import base64 # For embedding PDF
 import re
 
@@ -33,150 +34,128 @@ with st.form("syll_form"):
 
     validation_flags = []
 
-
     # 1. Họ & tên + Giới tính
     col_name, col_gender = st.columns([3, 1])
 
     with col_name:
-        full_name = st.text_input("1. Họ và tên (IN HOA)", placeholder="VD: NGUYỄN VĂN A")
-        full_name_is_valid = True
-        
-        if len(full_name) < 2:
-            if st.session_state.form_attempted_submission:
-                st.error(" ⚠️ Vui lòng điền đầy đủ tên")
-            full_name_is_valid = False
-        elif not re.match(r"^[A-ZÀÁẠẢÃÂẦẤẬẨẪĂẰẮẶẲẴĐÈÉẸẺẼÊỀẾỆỂỄÌÍỊỈĨÒÓỌỎÕÔỒỐỘỔỖƠỜỚỢỞỠÙÚỤỦŨƯỪỨỰỬỮỲÝỴỶỸ ]+$", full_name):
-            st.error(" ⚠️ Vui lòng điền lại tên viết hoa")
-            full_name_is_valid = False
+        full_name = st.text_input('1. Họ và tên (IN HOA)', 
+                                  placeholder='VD: NGUYỄN VĂN A')
+        full_name_is_valid, full_name_msg = vl.validate_full_name(full_name)
+        if not full_name_is_valid and st.session_state.form_attempted_submission:
+            st.error(f'⚠️ {full_name_msg}')
         validation_flags.append(full_name_is_valid)
-    with col_gender:
-        gender = st.selectbox("Nam/Nữ", ["", "Nam", "Nữ"], index=0)
-        gender_is_valid = True
 
-        if gender == "":
-            if st.session_state.form_attempted_submission:
-                st.error(" ⚠️ Vui lòng chọn giới tính")
-            gender_is_valid = False
+    with col_gender:
+        gender = st.selectbox('Nam/Nữ', ['', 'Nam', 'Nữ'], index=0)
+        gender_is_valid, gender_msg = vl.validate_gender(gender)
+        if not gender_is_valid and st.session_state.form_attempted_submission:
+            st.error(f'⚠️ {gender_msg}')
         validation_flags.append(gender_is_valid)
 
 
     # 2. Họ tên thường dùng
-    common_name = st.text_input("2. Họ tên thường dùng **(tùy chọn)**", placeholder="VD: Nguyễn Văn A")
+    common_name = st.text_input('2. Họ tên thường dùng **(tùy chọn)**', 
+                                placeholder='VD: Nguyễn Văn A')
 
 
     # 3. Ngày sinh
-    dob = st.date_input("3. Sinh ngày", value=None, min_value=date(1900, 1, 1),max_value=date.today())
-    dob_is_valid = True
-
-    if not dob:
-        if st.session_state.form_attempted_submission:
-            st.error(" ⚠️ Vui lòng điền ngày tháng năm sinh")
-        dob_is_valid = False
+    dob = st.date_input('3. Sinh ngày', value=None, 
+        min_value=date(1900, 1, 1),max_value=date.today(), key='dob')
+    dob_is_valid, dob_msg = vl.validate_dob(dob)
+    if not dob_is_valid and st.session_state.form_attempted_submission:
+        st.error(f'⚠️ {dob_msg}')
     validation_flags.append(dob_is_valid)
 
 
     # 4‑5. Nơi sinh & Nguyên quán
-    birth_place = st.text_input("4. Nơi sinh",  placeholder="VD: Hà Nội")
-    origin = st.text_input("5. Nguyên quán", placeholder="VD: Hà Nội (nếu khác)")
+    birth_place = st.text_input("4. Nơi sinh",  
+                                placeholder="VD: Hà Nội")
+    origin = st.text_input("5. Nguyên quán", 
+                           placeholder="VD: Hà Nội (nếu khác)")
 
 
     # 6‑7. Hộ khẩu & Chỗ ở hiện nay
-    residence = st.text_input("6. Hộ khẩu thường trú", placeholder="VD: Số 1 Phố X, Quận Y, Hà Nội")
-    current_address = st.text_input("7. Chỗ ở hiện nay", placeholder="VD: như hộ khẩu / địa chỉ trọ")
+    residence = st.text_input("6. Hộ khẩu thường trú", 
+                              placeholder="VD: Số 1 Phố X, Quận Y, Hà Nội")
+    current_address = st.text_input(
+        "7. Chỗ ở hiện nay", 
+        placeholder="VD: như hộ khẩu / địa chỉ trọ")
 
 
     # 8. Điện thoại & Email (cùng hàng) Mandatory
     col_phone, col_email = st.columns(2)
 
     with col_phone:
-        phone = st.text_input("8a. Số điện thoại", placeholder="VD: 0987654321")
-        phone_is_valid = True
-
-        if not phone:
-            if st.session_state.form_attempted_submission:
-                st.error(" ⚠️ Vui lòng điền số điện thoại")
-            phone_is_valid = False
-        elif not re.match(r"^0\d{9}$", phone):
-            st.error(" ⚠️ Số điện thoại phải có 10 chữ số, bắt đầu bằng 0 (VD: 0987654321)")
-            phone_is_valid = False
-        # else: phone is filled and valid, phone_is_valid remains True
+        phone = st.text_input("8a. Số điện thoại", 
+                              placeholder="VD: 0987654321")
+        phone_is_valid, phone_msg = vl.validate_phone(phone)
+        if not phone_is_valid and st.session_state.form_attempted_submission:
+            st.error(f'⚠️ {phone_msg}')
         validation_flags.append(phone_is_valid)
 
     with col_email:
-        email = st.text_input("8b. Email", placeholder="VD: example@gmail.com")
-        email_is_valid = True
-
-        if not email:
-            if st.session_state.form_attempted_submission:
-                st.error(" ⚠️ Vui lòng điền email")
-            email_is_valid = False
-        elif not re.match(r"^[^@]+@[^@]+\.[^@]+$", email):
-            st.error(" ⚠️ Email không hợp lệ (VD: example@gmail.com)")
-            email_is_valid = False
-        # else: email is filled and valid, email_is_valid remains True
+        email = st.text_input('8b. Email', 
+                              placeholder='VD: example@gmail.com')
+        email_is_valid, email_msg = vl.validate_email(email)
+        if not email_is_valid and st.session_state.form_attempted_submission:
+            st.error(f'⚠️ {email_msg}')
         validation_flags.append(email_is_valid)
 
 
     # 9. Dân tộc & Tôn giáo
     col_eth, col_rel = st.columns(2)
     with col_eth:
-        ethnicity = st.selectbox("9a. Dân tộc", ethnic_groups_vietnam)
-        ethnicity_is_valid = True
-        if ethnicity == "":
-            if st.session_state.form_attempted_submission:
-                st.error(" ⚠️ Vui lòng chọn dân tộc")
-            ethnicity_is_valid = False
+        ethnicity = st.selectbox('9a. Dân tộc', cbox.ethnic_groups_vietnam)
+        ethnicity_is_valid, ethnicity_msg = vl.validate_ethnicity(ethnicity)
+        if not ethnicity_is_valid and st.session_state.form_attempted_submission:
+             st.error(f'⚠️ {ethnicity_msg}')
+        validation_flags.append(ethnicity_is_valid)
+        
     with col_rel:
-        religion = st.selectbox("9b. Tôn giáo", religion_options)
-        religion_is_valid = True
-        other_religion = ""
-        if religion == "":
-            if st.session_state.form_attempted_submission:
-                st.error(" ⚠️ Vui lòng chọn tôn giáo")
-            religion_is_valid = False
-        elif religion == "Khác (Other – Ghi rõ)":
-            other_religion = st.text_input("Vui lòng ghi rõ tôn giáo của bạn")
+        religion = st.selectbox('9b. Tôn giáo', cbox.religion_options)
+        religion_is_valid, religion_msg = vl.validate_religion(religion)
+        other_religion = ''
+        if not religion_is_valid and st.session_state.form_attempted_submission:
+            st.error(f"⚠️ {religion_msg}")
+        elif religion == 'Khác (Other – Ghi rõ)':
+            other_religion = st.text_input(
+                "Vui lòng ghi rõ tôn giáo của bạn")
+        validation_flags.append(religion_is_valid) # Added this line
 
     # 10. Thành phần gia đình
-    family_standing = st.text_input("10. Thành phần gia đình", placeholder="VD: Công nhân / Nông dân / Viên chức")
-    family_standing_is_valid = True
-    if not family_standing:
-        if st.session_state.form_attempted_submission:
-            st.error(" ⚠️ Vui lòng điền thành phần gia đình")
-        family_standing_is_valid = False
+    family_standing = st.text_input('10. Thành phần gia đình', 
+        placeholder='VD: Công nhân / Nông dân / Viên chức')
+    family_standing_is_valid, family_standing_msg = vl.validate_family_standing(family_standing)
+    if not family_standing_is_valid and st.session_state.form_attempted_submission:
+        st.error(f"⚠️ {family_standing_msg}")
     validation_flags.append(family_standing_is_valid)
 
 
     # 11. CMND/CCCD – 3 ô trên cùng một hàng
     col_id_num, col_id_date, col_id_place = st.columns([2, 1, 2])
     with col_id_num:
-        id_number = st.text_input("11a. Số CMND/CCCD", placeholder="VD: 001234567890")
-        id_number_is_valid = True
-        if not id_number:
-            if st.session_state.form_attempted_submission:
-                st.error(" ⚠️ Vui lòng điền CMND/CCCD")
-            id_number_is_valid = False
-        elif not re.match(r"^(?:\d{9}|\d{12})$", id_number):
-            st.error(" ⚠️ CMND/CCCD không hợp lệ, vui lòng thử lại")
-            id_number_is_valid = False
+        id_number = st.text_input("11a. Số CMND/CCCD", 
+                                  placeholder="VD: 001234567890")
+        id_number_is_valid, id_number_msg = vl.validate_id_number(id_number)
+        if not id_number_is_valid and st.session_state.form_attempted_submission:
+            st.error(f"⚠️ {id_number_msg}")
         validation_flags.append(id_number_is_valid)
 
     with col_id_date:
-        id_issue_date = st.date_input("11b. Cấp ngày", value=None, min_value=date(1900, 1, 1) ,max_value=date.today())
-        id_issue_date_is_valid = True
-        if not id_issue_date:
-            if st.session_state.form_attempted_submission:
-                st.error(" ⚠️ Vui lòng điền ngày cấp CMND/CCCD")
-            id_issue_date_is_valid = False
+        id_issue_date = st.date_input(
+            "11b. Cấp ngày", value=None, 
+            min_value=date(1900, 1, 1) ,max_value=date.today())
+        id_issue_date_is_valid, id_issue_date_msg = vl.validate_id_issue_date(id_issue_date)
+        if not id_issue_date_is_valid and st.session_state.form_attempted_submission:
+            st.error(f"⚠️ {id_issue_date_msg}")
         validation_flags.append(id_issue_date_is_valid)
             
     with col_id_place:
-        id_issue_place = st.text_input("11c. Nơi cấp", placeholder="VD: Công an Hà Nội")
-        id_issue_place_is_valid = True
-        if not id_issue_place:
-            if st.session_state.form_attempted_submission:
-                st.error(" ⚠️ Vui lòng điền nơi cấp CMND/CCCD")
-            id_issue_place_is_valid = False
+        id_issue_place = st.text_input("11c. Nơi cấp", 
+                                       placeholder="VD: Công an Hà Nội")
+        id_issue_place_is_valid, id_issue_place_msg = vl.validate_id_issue_place(id_issue_place)
+        if not id_issue_place_is_valid and st.session_state.form_attempted_submission:
+            st.error(f"⚠️ {id_issue_place_msg}")
         validation_flags.append(id_issue_place_is_valid)
        
 
@@ -185,114 +164,140 @@ with st.form("syll_form"):
         st.markdown("**12.1 Đại học (tùy chọn)** ")
         b_col1, b_col2, b_col3 = st.columns(3)
         with b_col1:
-            bachelor_field = st.text_input("Ngành (ĐH)", placeholder="VD: Tin học")
+            bachelor_field = st.text_input("Ngành (ĐH)", 
+                                           placeholder="VD: Tin học")
         with b_col2:
-            bachelor_major = st.text_input("Chuyên ngành (ĐH)", placeholder="VD: Khoa học dữ liệu")
+            bachelor_major = st.text_input(
+                "Chuyên ngành (ĐH)", 
+                placeholder="VD: Khoa học dữ liệu")
         with b_col3:
-            bachelor_school = st.text_input("Nơi đào tạo (ĐH)", placeholder="VD: ĐH Quốc gia TP.HCM")
+            bachelor_school = st.text_input(
+                "Nơi đào tạo (ĐH)", 
+                placeholder="VD: ĐH Quốc gia TP.HCM")
 
         if bachelor_field and not (bachelor_major and bachelor_school): 
-            st.warning("Vui lòng bổ sung chuyên ngành và nơi đào tạo cho bằng cử nhân nếu ghi ngành")
+            st.warning("Vui lòng bổ sung chuyên ngành và " \
+            "nơi đào tạo cho bằng cử nhân nếu ghi ngành")
 
         st.markdown("**12.2 Thạc sĩ (tùy chọn)**")
         m_col1, m_col2, m_col3 = st.columns(3)
         with m_col1:
-            master_field = st.text_input("Ngành (ThS)", placeholder="VD: Công nghệ thông tin / Khoa học máy tính")
+            master_field = st.text_input("Ngành (ThS)", 
+                placeholder="VD: Công nghệ thông tin / Khoa học máy tính")
         with m_col2:
-            master_major = st.text_input("Chuyên ngành (ThS)", placeholder="VD: Trí tuệ nhân tạo / Khoa học máy tính")
+            master_major = st.text_input("Chuyên ngành (ThS)", 
+                placeholder="VD: Trí tuệ nhân tạo / Khoa học máy tính")
         with m_col3:
-            master_school = st.text_input("Nơi đào tạo (ThS)", placeholder="VD: ĐH Bách Khoa Hà Nội")
+            master_school = st.text_input(
+                "Nơi đào tạo (ThS)", placeholder="VD: ĐH Bách Khoa Hà Nội")
 
         if master_field and not (master_major and master_school): 
-            st.warning("Vui lòng bổ sung chuyên ngành và nơi đào tạo cho bằng thạc sĩ nếu ghi ngành")    
+            st.warning("Vui lòng bổ sung chuyên ngành và " \
+            "nơi đào tạo cho bằng thạc sĩ nếu ghi ngành")    
 
         st.markdown("**12.3 Tiến sĩ (tùy chọn)**")
         p_col1, p_col2, p_col3 = st.columns(3)
         with p_col1:
-            phd_field = st.text_input("Ngành (TS)", placeholder="VD: Tin học")
+            phd_field = st.text_input(
+                "Ngành (TS)", placeholder="VD: Tin học")
         with p_col2:
-            phd_major = st.text_input("Chuyên ngành (TS)", placeholder="VD: Trí tuệ nhân tạo")
+            phd_major = st.text_input(
+                "Chuyên ngành (TS)", placeholder="VD: Trí tuệ nhân tạo")
         with p_col3:
-            phd_school = st.text_input("Nơi đào tạo (TS)", placeholder="VD: ĐH Quốc Qia Hà Nội")
+            phd_school = st.text_input(
+                "Nơi đào tạo (TS)", placeholder="VD: ĐH Quốc Qia Hà Nội")
 
         if phd_field and not (phd_major and phd_school): 
-            st.warning("Vui lòng bổ sung chuyên ngành và nơi đào tạo cho bằng tiến sĩ nếu ghi ngành")
+            st.warning("Vui lòng bổ sung chuyên ngành và " \
+            "nơi đào tạo cho bằng tiến sĩ nếu ghi ngành")
 
 
     # 13. Ngoại ngữ & Tin học
     col_lang, col_it = st.columns(2)
     with col_lang:
-        foreign_language = st.text_input("13a. Trình độ ngoại ngữ **(tùy chọn)**", 
-                                         placeholder="VD: English (IELTS 6.5) / Japanese (N3)")
+        foreign_language = st.text_input(
+            "13a. Trình độ ngoại ngữ **(tùy chọn)**", 
+            placeholder="VD: English (IELTS 6.5) / Japanese (N3)")
     with col_it:
-        it_level = st.text_input("13b. Tin học **(tùy chọn)**", placeholder="VD: Thành thạo Word, Excel, PowerPoint")
+        it_level = st.text_input(
+            "13b. Tin học **(tùy chọn)**", 
+            placeholder="VD: Thành thạo Word, Excel, PowerPoint")
 
 
     # 14. Lý luận chính trị
-    politics_level = st.selectbox("14. Trình độ lý luận chính trị", politics_options)
-    politics_level_is_valid = True
-    if politics_level == "":
-        if st.session_state.form_attempted_submission:
-            st.error(" ⚠️ Vui lòng chọn trình độ lý luận chính trị")
-        politics_level_is_valid = False
+    politics_level = st.selectbox(
+        "14. Trình độ lý luận chính trị", cbox.politics_options)
+    politics_level_is_valid, politics_level_msg = vl.validate_politics_level(politics_level)
+    if not politics_level_is_valid and st.session_state.form_attempted_submission:
+        st.error(f"⚠️ {politics_level_msg}")
     validation_flags.append(politics_level_is_valid)
 
 
     # 15‑16. Đoàn & Đảng
     col_doan, col_dang, col_dang_off = st.columns(3)
     with col_doan:
-        doan_date = st.date_input("15. Ngày vào Đoàn **(tùy chọn)** (VD: 26/3 lớp 10)", 
-                                  value=None, min_value=date(1900, 1, 1), max_value=date.today())
+        doan_date = st.date_input(
+            "15. Ngày vào Đoàn **(tùy chọn)** (VD: 26/3 lớp 10)", 
+            value=None, min_value=date(1900, 1, 1), max_value=date.today())
     with col_dang:
-        dang_join_date = st.date_input("16a. Ngày vào Đảng **(tùy chọn)** (VD: 3/2/2020)", 
-                                       value=None, min_value=date(1900, 1, 1), max_value=date.today())
+        dang_join_date = st.date_input(
+            "16a. Ngày vào Đảng **(tùy chọn)** (VD: 3/2/2020)", 
+            value=None, min_value=date(1900, 1, 1), max_value=date.today())
     with col_dang_off:
-        dang_official_date = st.date_input("16b. Ngày chính thức **(tùy chọn)** (VD: 3/2/2021)", 
-                                           value=None, min_value=date(1900, 1, 1), max_value=date.today())
+        dang_official_date = st.date_input(
+            "16b. Ngày chính thức **(tùy chọn)** (VD: 3/2/2021)", 
+            value=None, min_value=date(1900, 1, 1), max_value=date.today())
 
 
     # 17‑18. Cơ quan & Chức vụ
-    work_org = st.text_input("17. Cơ quan công tác hiện nay **(tùy chọn)**", 
-                             placeholder="VD: FPT Telecom – Chi nhánh Hà Nội")
-    work_position = st.selectbox("18. Chức vụ hiện nay **(tùy chọn)**", work_position_options)
+    work_org = st.text_input(
+        "17. Cơ quan công tác hiện nay **(tùy chọn)**", 
+        placeholder="VD: FPT Telecom – Chi nhánh Hà Nội")
+    work_position = st.selectbox("18. Chức vụ hiện nay **(tùy chọn)**", 
+                                 cbox.work_position_options)
+    other_work_position = ""
+    work_position_is_valid, work_position_msg = vl.validate_work_position_if_org(work_position, work_org)
     if work_org:
-        work_position_is_valid = True
-        other_work_position = ""
-        if work_position == "":
-            st.error(" ⚠️ Vui lòng chọn vị trí hiện nay nếu điền cơ quan công tác")
-            work_position_is_valid = False
+        if not work_position_is_valid and st.session_state.form_attempted_submission:
+            st.error(f'⚠️ {work_position_msg}')
         elif work_position == "Khác (Other – Ghi rõ)":
             other_work_position = st.text_input("Vui lòng ghi rõ chức vụ")
-        validation_flags.append(work_position_is_valid)
+    validation_flags.append(work_position_is_valid)
 
     # 19. Học vị / Danh hiệu
     col_acad_title, col_acad_year = st.columns(2)
     with col_acad_title:
-        academic_title = st.selectbox("19. Học vị / học hàm / danh hiệu Nhà nước phong tặng **(tùy chọn)**", 
-                                       awards_titles_options)
+        academic_title = st.selectbox(
+            "19. Học vị / học hàm / danh hiệu Nhà nước phong tặng **(tùy chọn)**", 
+            cbox.awards_titles_options)
         other_academic_title = ""
 
         if academic_title == "Khác (Other – Ghi rõ)":
-            other_academic_title = st.text_input("Vui lòng ghi rõ học vị / học hàm / danh hiệu khác")
+            other_academic_title = st.text_input(
+                "Vui lòng ghi rõ học vị / học hàm / danh hiệu khác")
 
     with col_acad_year:
         years = [""] + list(range(date.today().year, 1899, -1))
         academic_year = st.selectbox('Năm nhận', years)
 
+        academic_year_is_valid, academic_year_msg = vl.validate_academic_year_if_title(academic_year, academic_title)
         if academic_title:
-            academic_year_is_valid = True
-            if academic_year == "":
-
-                st.error(" ⚠️ Vui lòng chọn năm nhận")
-                academic_year_is_valid = False
-            validation_flags.append(academic_year_is_valid)
+            if not academic_year and st.session_state.form_attempted_submission:
+                st.error(f"⚠️ {academic_year_msg}")
+        validation_flags.append(academic_year_is_valid)
             
 
 
     # 20‑22. Khen thưởng / Kỷ luật / Sở trường
-    awards = st.text_area("20. Khen thưởng **(tùy chọn)**", placeholder="VD: Giấy khen học tập tốt")
-    discipline = st.text_area("21. Kỷ luật **(tùy chọn)**", placeholder="VD: Không / Cảnh cáo / …")
-    strengths = st.text_area("22. Sở trường **(tùy chọn)**",placeholder="VD: Giao tiếp, Làm việc nhóm, Tin học văn phòng")
+    awards = st.text_area(
+        "20. Khen thưởng **(tùy chọn)**", 
+        placeholder="VD: Giấy khen học tập tốt")
+    discipline = st.text_area(
+        "21. Kỷ luật **(tùy chọn)**", 
+        placeholder="VD: Không / Cảnh cáo / …")
+    strengths = st.text_area(
+        "22. Sở trường **(tùy chọn)**",
+        placeholder="VD: Giao tiếp, Làm việc nhóm, Tin học văn phòng")
 
     st.markdown("---")
 
@@ -307,41 +312,16 @@ with st.form("syll_form"):
         "Nơi công tác": pd.Series(dtype="string"),
     })
     family_df = st.data_editor(
-        family_template, num_rows="dynamic", key="family_editor", use_container_width=True
+        family_template, num_rows="dynamic", 
+        key="family_editor", use_container_width=True
     )
 
-    family_valid = True
-    if len(family_df) == 0:
-        if st.session_state.form_attempted_submission:
-            st.error(f' ⚠️ Vui lòng điền Quá trình đào tạo, bồi dưỡng')
-        family_valid = False
-
-    # Validate family relationships data
-    # Check for empty required fields in family data
-    for idx, row in family_df.iterrows():
-        if pd.isna(row["Quan hệ"]) or row["Quan hệ"].strip() == "":
-            if st.session_state.form_attempted_submission:
-                st.error(f" ⚠️ Hàng {idx+1}: Quan hệ không được để trống")
-            family_valid = False
-        
-        if pd.isna(row["Họ và tên"]) or row["Họ và tên"].strip() == "":
-            if st.session_state.form_attempted_submission:
-                st.error(f" ⚠️ Hàng {idx+1}: Họ và tên không được để trống")
-            family_valid = False
-        
-        # Validate year of birth - must be numeric and reasonable
-        if not pd.isna(row["Năm sinh"]) and row["Năm sinh"].strip() != "":
-            try:
-                birth_year = int(row["Năm sinh"])
-                current_year = date.today().year
-                if birth_year < 1900 or birth_year > current_year:
-                    st.error(f" ⚠️ Hàng {idx+1}: Năm sinh phải từ 1900 đến {current_year}")
-                    family_valid = False
-            except ValueError:
-                st.error(f" ⚠️ Hàng {idx+1}: Năm sinh phải là số")
-                family_valid = False
-
-    validation_flags.append(family_valid)
+    family_df_is_valid, family_df_msg = vl.validate_family_df(
+        family_df, st.session_state.form_attempted_submission)
+    if not family_df_is_valid and st.session_state.form_attempted_submission:
+        for msg in family_df_msg:
+            st.error(f"⚠️ {msg}")
+    validation_flags.append(family_df_is_valid)
 
     st.markdown("---")
 
@@ -358,61 +338,15 @@ with st.form("syll_form"):
         "Văn bằng / Chứng chỉ":     pd.Series(dtype="string"),
     })
     edu_df = st.data_editor(
-        edu_template, num_rows="dynamic", key="edu_editor", use_container_width=True
+        edu_template, num_rows="dynamic", 
+        key="edu_editor", use_container_width=True
     )
 
-    # Validate education data
-    edu_valid = True
-    date_pattern = re.compile(r'^(0?[1-9]|1[0-2])/\d{4}$')  # MM/YYYY format
-
-    if len(edu_df) == 0:
-        if st.session_state.form_attempted_submission:
-            st.error(f' ⚠️ Vui lòng điền Quá trình đào tạo, bồi dưỡng')
-        edu_valid = False
-
-    for idx, row in edu_df.iterrows():
-        # Check date format and range
-        if pd.isna(row["Từ (tháng/năm)"]) or row["Từ (tháng/năm)"].strip() == "":
-            if st.session_state.form_attempted_submission:
-                st.error(f" ⚠️ Đào tạo {idx+1}: Thời gian bắt đầu không được để trống")
-            edu_valid = False
-        elif not date_pattern.match(row["Từ (tháng/năm)"]):
-            st.error(f" ⚠️ Đào tạo {idx+1}: Thời gian bắt đầu phải theo định dạng MM/YYYY (VD: 09/2015)")
-            edu_valid = False
-        
-        if pd.isna(row["Đến (tháng/năm)"]) or row["Đến (tháng/năm)"].strip() == "":
-            if st.session_state.form_attempted_submission:
-                st.error(f" ⚠️ Đào tạo {idx+1}: Thời gian kết thúc không được để trống")
-            edu_valid = False
-        elif not date_pattern.match(row["Đến (tháng/năm)"]):
-            st.error(f" ⚠️ Đào tạo {idx+1}: Thời gian kết thúc phải theo định dạng MM/YYYY (VD: 06/2019)")
-            edu_valid = False
-        
-        # Validate start date is before end date
-        if not pd.isna(row["Từ (tháng/năm)"]) and not pd.isna(row["Đến (tháng/năm)"]) and \
-        date_pattern.match(row["Từ (tháng/năm)"]) and date_pattern.match(row["Đến (tháng/năm)"]):
-            start_parts = row["Từ (tháng/năm)"].split('/')
-            end_parts = row["Đến (tháng/năm)"].split('/')
-            
-            start_date = int(start_parts[1]) * 12 + int(start_parts[0])
-            end_date = int(end_parts[1]) * 12 + int(end_parts[0])
-            
-            if start_date > end_date:
-                st.error(f" ⚠️ Đào tạo {idx+1}: Thời gian bắt đầu phải trước thời gian kết thúc")
-                edu_valid = False
-        
-        # Check school/institution name
-        if pd.isna(row["Trường / Cơ sở đào tạo"]) or row["Trường / Cơ sở đào tạo"].strip() == "":
-            if st.session_state.form_attempted_submission:
-                st.error(f" ⚠️ Đào tạo {idx+1}: Trường/Cơ sở đào tạo không được để trống")
-            edu_valid = False
-        
-        # Check degree/certificate
-        if pd.isna(row["Văn bằng / Chứng chỉ"]) or row["Văn bằng / Chứng chỉ"].strip() == "":
-            if st.session_state.form_attempted_submission:
-                st.error(f" ⚠️ Đào tạo {idx+1}: Văn bằng/Chứng chỉ không được để trống")
-            edu_valid = False
-
+    edu_valid, edu_error_msgs = vl.validate_edu_df(
+        edu_df, st.session_state.form_attempted_submission)
+    if not edu_valid and st.session_state.form_attempted_submission:
+        for msg in edu_error_msgs:
+            st.error(f"⚠️ {msg}")
     validation_flags.append(edu_valid)
 
     st.markdown("---")
@@ -430,50 +364,11 @@ with st.form("syll_form"):
         work_template, num_rows="dynamic", key="work_editor", use_container_width=True
     )
 
-    # Validate work history data
-    work_valid = True
-    for idx, row in work_df.iterrows():
-        # Check date format and range
-        if pd.isna(row["Từ (tháng/năm)"]) or row["Từ (tháng/năm)"].strip() == "":
-            if st.session_state.form_attempted_submission:
-                st.error(f" ⚠️ Công tác {idx+1}: Thời gian bắt đầu không được để trống")
-            work_valid = False
-        elif not date_pattern.match(row["Từ (tháng/năm)"]):
-            st.error(f" ⚠️ Công tác {idx+1}: Thời gian bắt đầu phải theo định dạng MM/YYYY (VD: 09/2015)")
-            work_valid = False
-        
-        # End date can be empty if it's current job
-        if not pd.isna(row["Đến (tháng/năm)"]) and row["Đến (tháng/năm)"].strip() != "" and \
-        not date_pattern.match(row["Đến (tháng/năm)"]):
-            if row["Đến (tháng/năm)"].lower() != "hiện tại" and row["Đến (tháng/năm)"].lower() != "nay":
-                st.error(f" ⚠️ Công tác {idx+1}: Thời gian kết thúc phải để trống, ghi 'Hiện tại', hoặc theo định dạng MM/YYYY")
-                work_valid = False
-        
-        # Validate start date is before end date
-        if not pd.isna(row["Từ (tháng/năm)"]) and not pd.isna(row["Đến (tháng/năm)"]) and \
-        date_pattern.match(row["Từ (tháng/năm)"]) and date_pattern.match(row["Đến (tháng/năm)"]):
-            start_parts = row["Từ (tháng/năm)"].split('/')
-            end_parts = row["Đến (tháng/năm)"].split('/')
-            
-            start_date = int(start_parts[1]) * 12 + int(start_parts[0])
-            end_date = int(end_parts[1]) * 12 + int(end_parts[0])
-            
-            if start_date > end_date:
-                st.error(f" ⚠️ Công tác {idx+1}: Thời gian bắt đầu phải trước thời gian kết thúc")
-                work_valid = False
-        
-        # Check organization
-        if pd.isna(row["Đơn vị công tác"]) or row["Đơn vị công tác"].strip() == "":
-            # if st.session_state.form_attempted_submission:
-            st.error(f" ⚠️ Công tác {idx+1}: Đơn vị công tác không được để trống")
-            work_valid = False
-        
-        # Check position
-        if pd.isna(row["Chức vụ"]) or row["Chức vụ"].strip() == "":
-            # if st.session_state.form_attempted_submission:
-            st.error(f" ⚠️ Công tác {idx+1}: Chức vụ không được để trống")
-            work_valid = False
-
+    # Work history validation (optional overall, but fields are mandatory if a row is added)
+    work_valid, work_error_msgs = vl.validate_work_df(work_df, st.session_state.form_attempted_submission)
+    if not work_valid and st.session_state.form_attempted_submission: # Only show errors if attempted and invalid
+        for msg in work_error_msgs:
+            st.error(f"⚠️ {msg}")
     validation_flags.append(work_valid)
 
     # Submit button -----------------------------------------------------------
@@ -484,17 +379,23 @@ with st.form("syll_form"):
 
 # ========= END FORM =========
 
-if submitted:
+if st.session_state.form_attempted_submission:
+    if dob is None:
+        st.error(" ⚠️ Vui lòng điền ngày tháng năm sinh")
 
-    # Crucially, set this to True now.
-    # On the *next* rerun (which happens immediately as part of this submission process),
-    # the form rendering logic above will use this updated state to show mandatory field errors.
+if submitted:
+    # Crucially, ensure form_attempted_submission is True for immediate feedback if not already set by on_click
     st.session_state.form_attempted_submission = True
     
     # Due to Streamlit's rerun, the validation_flags will contain the validation results for the submitted data.
     all_form_fields_are_valid = all(validation_flags)
 
     if all_form_fields_are_valid:
+        # Consolidate religion if 'Khác' was chosen
+        final_religion = other_religion if religion=="Khác (Other – Ghi rõ)" and other_religion else religion
+        final_work_position = other_work_position if work_position=="Khác (Other – Ghi rõ)" and other_work_position else work_position
+        final_academic_title = other_academic_title if academic_title == "Khác (Other – Ghi rõ)" and other_academic_title else academic_title
+        
         form_data = {
             "full_name": full_name, "gender": gender, "common_name": common_name, "dob": dob,
             "birth_place": birth_place, "origin": origin, "residence": residence,
@@ -531,7 +432,6 @@ if submitted:
         st.session_state.pdf_bytes_to_display = None
 
 
-
 # --- PDF Viewer Section (now below the form) ---
 if st.session_state.form_submission_status: # Only show this section if form has been submitted at least once
     st.markdown("---") # Add a separator
@@ -560,6 +460,3 @@ if st.session_state.form_submission_status: # Only show this section if form has
         # You could add a small note here if needed, or leave it blank.
         st.info("Do có lỗi trong quá trình tạo PDF, bản xem trước không có sẵn.")
     # No need for an 'else' here to show "Điền thông tin..." as it's always visible above.
-
-
-
