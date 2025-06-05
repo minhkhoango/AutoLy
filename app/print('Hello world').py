@@ -1,1 +1,0 @@
-print('O BÉO, UN GẦY')
