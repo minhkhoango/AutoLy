@@ -1,8 +1,7 @@
 import re
 from datetime import date
-import pandas as pd
-from typing import Tuple, List, Any, Optional, Pattern
-import numpy as np
+from typing import Tuple, List, Optional, Pattern
+
 
 # Regex patterns
 FULL_NAME_PATTERN: Pattern[str] = re.compile(r'^[A-ZÀÁẠẢÃÂẦẤẬẨẪĂẰẮẶẲẴĐÈÉẸẺẼÊỀẾỆỂỄÌÍỊỈĨÒÓỌỎÕÔỒỐỘỔỖƠỜỚỢỞỠÙÚỤỦŨƯỪỨỰỬỮỲÝỴỶỸ ]+$')
@@ -10,16 +9,6 @@ PHONE_PATTERN: Pattern[str] = re.compile(r'^0\d{9}$')
 EMAIL_PATTERN: Pattern[str] = re.compile(r'^[^@]+@[^@]+\.[^@]+$')
 ID_NUMBER_PATTERN: Pattern[str] = re.compile(r'^(?:\d{9}|\d{12})$')
 DATE_MM_YYYY_PATTERN: Pattern[str] = re.compile(r'^(0?[1-9]|1[0-2])/\d{4}$')
-
-
-def get_value_as_str(cell_value: Any) -> str:
-    if cell_value is None:
-        return ''
-    if cell_value is pd.NA:
-        return ''
-    if isinstance(cell_value, float) and np.isnan(cell_value):
-        return ''
-    return str(cell_value).strip()
 
 class Vl:
     @staticmethod
@@ -97,7 +86,7 @@ class Vl:
             return False, 'Vui lòng điền thông tin người cần báo tin'
         parts: List[str] = emergency_contact_combined.split(',')
         if len(parts) < 2:
-            return False, 'Vui lòng điền đầy đủ thông tin người cần báo tin (Họ tên, Số điện thoại, Quan hệ)'
+            return False, 'Vui lòng điền đầy đủ người cần báo tin và quan hệ với họ (Họ tên, Quan hệ)'
         
         name: str = parts[0].strip()
         relationship: str = parts[1].strip()
@@ -149,11 +138,11 @@ class Vl:
     
     @staticmethod
     def validate_work_position_if_org(
-            work_position_str: Optional[str], work_org_str: Optional[str]) -> Tuple[bool, str]: # Args can be None
+        work_position_str: Optional[str], work_org_str: Optional[str]) -> Tuple[bool, str]: # Args can be None
         work_org_filled: bool = bool(work_org_str and work_org_str.strip())
         work_position_filled: bool = bool(work_position_str and work_position_str.strip())
 
-        if work_org_filled and work_position_filled:
+        if work_org_filled and not work_position_filled:
             return False, 'Vui lòng chọn vị trí hiện nay nếu điền cơ quan công tác'
         return True, ''
     
@@ -180,68 +169,25 @@ class Vl:
         return True, ''
     
     @staticmethod
-    def validate_family_df(df: pd.DataFrame, form_attempted: bool
-                                ) -> Tuple[bool, List[str]]:
-        family_valid = True
-        error_messages: List[str] = []
-        if df.empty: # Changed from len(df) == 0 for clarity with pandas
-            if form_attempted:
-                error_messages.append('Vui lòng điền Quan hệ gia đình')
-            return False, error_messages # If empty and attempted, it's invalid
-        
-        try:
-            df_column_list = list(df.columns)
-            col_quan_he_idx = df_column_list.index('Quan hệ')
-            col_ho_ten_idx = df_column_list.index('Họ và tên')
-            col_nam_sinh_idx = df_column_list.index('Năm sinh')
-        except ValueError:
-            error_messages.append("Lỗi cấu trúc DataFrame Gia đình: Thiếu cột bắt buộc.")
-            return False, error_messages
-        
-        # Iterate using itertuples for Pylance strict-friendliness
-        # index=False: tuples do not include the DataFrame index
-        # name=None: returns plain tuples
+    def validate_choice_made(value_selected: Optional[str]) -> Tuple[bool, str]:
+        """
+        Validates that a choice has been made (value is not None or empty/whitespace).
+        Suitable for mandatory select/radio fields where all options are valid data points.
+        """
+        if value_selected and value_selected.strip():
+            return True, ""
+        return False, "Vui lòng thực hiện lựa chọn cho mục này."
 
-        for df_row_idx, row_tuple in enumerate(df.itertuples(index=False, name=None)):
-            display_row_num = df_row_idx + 1 # 1-based row number for error messages
+    @staticmethod
+    def validate_text_input_required(text_value: Optional[str]) -> Tuple[bool, str]:
+        """Validates that a text input is not empty or just whitespace."""
+        if text_value and text_value.strip():
+            return True, ""
+        return False, "Vui lòng không để trống trường này."
 
-            try:
-                quan_he_cell_val: Any = row_tuple[col_quan_he_idx]
-                ho_ten_cell_val: Any = row_tuple[col_ho_ten_idx]
-                nam_sinh_cell_val: Any = row_tuple[col_nam_sinh_idx]
-            except IndexError:
-                error_messages.append(f'Gia đình {display_row_num}: Lỗi đọc dữ liệu hàng.')
-                family_valid = False
-                continue # Skip to next row if data cannot be read
-        
-            # Use the global get_value_as_str (pd.isna call removed from it)
-            quan_he_val: str = get_value_as_str(quan_he_cell_val)
-            ho_ten_val: str = get_value_as_str(ho_ten_cell_val)
-            nam_sinh_val: str = get_value_as_str(nam_sinh_cell_val)
-
-            # Validation logic for each field
-            if not quan_he_val:
-                error_messages.append(f'Gia đình {display_row_num}: Vui lòng điền Quan hệ')
-                family_valid = False
-            if not ho_ten_val:
-                error_messages.append(f'Gia đình {display_row_num}: Vui lòng điền Họ và tên')
-                family_valid = False
-            
-            if nam_sinh_val: # If 'nam_sinh' is not empty
-                try:
-                    nam_sinh_int: int = int(nam_sinh_val)
-                    if not (1900 <= nam_sinh_int <= date.today().year):
-                        error_messages.append(f'Gia đình {display_row_num}: Năm sinh phải từ 1900 đến {date.today().year}')
-                        family_valid = False
-                except ValueError:
-                    error_messages.append(f'Gia đình {display_row_num}: Năm sinh không hợp lệ')
-                    family_valid = False
-            # If 'Năm sinh' is empty, it's an error if other fields in *this specific row* are filled.
-            # The original `elif form_attempted:` was a bit broad for the message "nếu có thông tin khác trong hàng".
-            elif quan_he_val or ho_ten_val: 
-                error_messages.append(f'Gia đình {display_row_num}: Năm sinh không được để trống khi có thông tin khác trong hàng')
-                family_valid = False
-            # If the row is completely empty (quan_he_val, ho_ten_val, AND nam_sinh_val are all empty strings),
-            # this row is effectively skipped for these specific field validations.
-            # The overall `df.empty` check handles the case of no rows at all if form_attempted.
-        return family_valid, error_messages
+    @staticmethod
+    def validate_date_required(date_value: Optional[date]) -> Tuple[bool, str]:
+        """Validates that a date has been selected."""
+        if date_value: # Assuming create_field's arg func for date returns date object or None
+            return True, ""
+        return False, "Vui lòng chọn ngày."
