@@ -36,7 +36,6 @@ ID_PASSPORT_ISSUE_PLACE_KEY: str = 'id_passport_issue_place'
 
 # Step 2 (Contact & Address)
 REGISTERED_ADDRESS_KEY: str = 'registered_address'
-EMAIL_KEY: str = 'email'
 PHONE_KEY: str = 'phone'
 EMERGENCY_CONTACT_COMBINED_KEY: str = 'emergency_contact_combined'
 EMERGENCY_PLACE_KEY: str = 'emergency_place'
@@ -60,8 +59,8 @@ PARTY_MEMBERSHIP_KEY: str = 'party_membership'
 PARTY_DATE_KEY: str = 'party_date'
 YOUTH_MEMBERSHIP_KEY: str = 'youth_membership'
 YOUTH_DATE_KEY: str = 'youth_date'
-ETHNICITY_KEY: str = 'ethnicity_step4' # Key used in form_data for ethnicity in step 4
-RELIGION_KEY: str = 'religion_step4'   # Key used in form_data for religion in step 4
+ETHNICITY_KEY: str = 'ethnicity' # Key used in form_data for ethnicity in step 4
+RELIGION_KEY: str = 'religion'   # Key used in form_data for religion in step 4
 FAMILY_INVOLVEMENT_KEY: str = 'family_involvement'
 FAM_NAME_KEY: str = 'fam_name'
 FAM_RELATION_KEY: str = 'fam_relation'
@@ -82,8 +81,6 @@ PDF_ID_ISSUE_YEAR_KEY: str = 'id_issue_year_pdf'
 PDF_ID_ISSUE_PLACE_KEY: str = 'id_issue_place_pdf'
 
 PDF_REGISTERED_ADDRESS_KEY: str = 'registered_address_pdf'
-PDF_CURRENT_ADDRESS_KEY: str = 'current_address_pdf'
-PDF_EMAIL_KEY: str = 'email_address_pdf'
 PDF_PHONE_MOBILE_KEY: str = 'phone_mobile_pdf'
 PDF_EMERGENCY_CONTACT_DETAILS_KEY: str = 'emergency_contact_details_pdf'
 PDF_EMERGENCY_CONTACT_ADDRESS_KEY: str = 'emergency_contact_address_pdf'
@@ -91,26 +88,37 @@ PDF_EMERGENCY_CONTACT_ADDRESS_KEY: str = 'emergency_contact_address_pdf'
 PDF_HIGHEST_EDUCATION_KEY: str = 'highest_education_pdf'
 PDF_SPECIALIZED_AREA_KEY: str = 'specialized_area_pdf'
 
-PDF_PARTY_ADM_DAY_KEY: str = 'party_adm_day_pdf'
-PDF_PARTY_ADM_MONTH_KEY: str = 'party_adm_month_pdf'
-PDF_PARTY_ADM_YEAR_KEY: str = 'party_adm_year_pdf'
 PDF_YOUTH_ADM_DAY_KEY: str = 'youth_adm_day_pdf'
 PDF_YOUTH_ADM_MONTH_KEY: str = 'youth_adm_month_pdf'
 PDF_YOUTH_ADM_YEAR_KEY: str = 'youth_adm_year_pdf'
+PDF_PARTY_ADM_DAY_KEY: str = 'party_adm_day_pdf'
+PDF_PARTY_ADM_MONTH_KEY: str = 'party_adm_month_pdf'
+PDF_PARTY_ADM_YEAR_KEY: str = 'party_adm_year_pdf'
 
 PDF_ETHNICITY_KEY: str = 'ethnicity_pdf'
 PDF_RELIGION_KEY: str = 'religion_pdf'
 
-PDF_FAM_NAME_KEY: str = 'fam_involve_name_pdf'
-PDF_FAM_RELATION_KEY: str = 'fam_involve_relation_pdf'
-PDF_FAM_ROLE_KEY: str = 'fam_involve_role_pdf'
-PDF_FAM_PERIOD_KEY: str = 'fam_involve_period_pdf'
+# PDF_DAD_NAME_KEY: str = 'dad_name_pdf'
+# PDF_DAD_AGE_KEY: str = 'dad_age_pdf'
+# PDF_DAD_JOB_KEY: str = 'dad_job_pdf'
+
+# PDF_MOM_NAME_KEY: str = 'mom_name_pdf'
+# PDF_MOM_AGE_KEY: str = 'mom_age_pdf'
+# PDF_MOM_JOB_KEY: str = 'mom_job_pdf'
+
+# PDF_SPOUSE_NAME_KEY: str = 'spouse_name_pdf'
+# PDF_SPOUSE_AGE_KEY: str = 'spouse_age_pdf'
+# PDF_SPOUSE_JOB_KEY: str = 'spouse_job_pdf'
+
+# PDF_CHILD_NAME_KEY: str = 'child_name_pdf'
+# PDF_CHILD_AGE_KEY: str = 'child_age_pdf'
 
 # Default options if not found in para.py
 ETHNIC_OPTIONS_DEFAULT_FOR_INIT: List[str] = ["Kinh", "Tày", "Thái", "Mường", "Khác"]
 RELIGION_OPTIONS_DEFAULT_FOR_INIT: List[str] = ["Không", "Phật giáo", "Công giáo", "Khác"]
 
 PDF_TEMPLATE_PATH: str = "assets/Mau-so-yeu-ly-lich-TEMPLATE.pdf" # Ensure this path is correct
+PDF_FILENAME: str = "SoYeuLyLich_DaDien.pdf"
 
 
 # --- Global Helper Function: create_field ---
@@ -349,7 +357,6 @@ def get_label_for_key(field_key: str) -> str:
         ID_PASSPORT_ISSUE_DATE_KEY: 'Ngày cấp CMND/CCCD',
         ID_PASSPORT_ISSUE_PLACE_KEY: 'Nơi cấp CMND/CCCD',
         REGISTERED_ADDRESS_KEY: 'Địa chỉ hộ khẩu',
-        EMAIL_KEY: 'Email',
         PHONE_KEY: 'Số điện thoại',
         EMERGENCY_CONTACT_COMBINED_KEY: 'Khi cần báo tin cho',
         EMERGENCY_PLACE_KEY: 'Địa chỉ báo tin',
@@ -463,7 +470,6 @@ def generate_pdf_data_mapping(
 
     # --- Section 2: Addresses & Contact ---
     data_for_pdf[PDF_REGISTERED_ADDRESS_KEY] = form_data_app.get(REGISTERED_ADDRESS_KEY, '')
-    data_for_pdf[PDF_EMAIL_KEY] = form_data_app.get(EMAIL_KEY, '')
     data_for_pdf[PDF_PHONE_MOBILE_KEY] = form_data_app.get(PHONE_KEY, '')
     data_for_pdf[PDF_EMERGENCY_CONTACT_DETAILS_KEY] = form_data_app.get(EMERGENCY_CONTACT_COMBINED_KEY, '')
     data_for_pdf[PDF_EMERGENCY_CONTACT_ADDRESS_KEY] = form_data_app.get(EMERGENCY_PLACE_KEY, '')
@@ -511,17 +517,6 @@ def generate_pdf_data_mapping(
         data_for_pdf[PDF_YOUTH_ADM_DAY_KEY], data_for_pdf[PDF_YOUTH_ADM_MONTH_KEY], data_for_pdf[PDF_YOUTH_ADM_YEAR_KEY] = '', '', ''
 
     # UPDATED: Use passed-in keys for ethnicity and religion
-    data_for_pdf[PDF_ETHNICITY_KEY] = form_data_app.get(ethnicity_key_from_app, '')
+    data_for_pdf[PDF_ETHNICITY_KEY] = form_data_app .get(ethnicity_key_from_app, '')
     data_for_pdf[PDF_RELIGION_KEY] = form_data_app.get(religion_key_from_app, '')
-
-    if form_data_app.get(family_involvement_key_from_app) == "Có":
-        data_for_pdf[PDF_FAM_NAME_KEY] = form_data_app.get(fam_name_key_from_app, '')
-        data_for_pdf[PDF_FAM_RELATION_KEY] = form_data_app.get(fam_relation_key_from_app, '')
-        data_for_pdf[PDF_FAM_ROLE_KEY] = form_data_app.get(fam_role_key_from_app, '')
-        data_for_pdf[PDF_FAM_PERIOD_KEY] = form_data_app.get(fam_period_key_from_app, '')
-    else:
-        data_for_pdf[PDF_FAM_NAME_KEY] = ''
-        data_for_pdf[PDF_FAM_RELATION_KEY] = ''
-        data_for_pdf[PDF_FAM_ROLE_KEY] = ''
-        data_for_pdf[PDF_FAM_PERIOD_KEY] = ''
     return data_for_pdf

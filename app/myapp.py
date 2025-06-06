@@ -42,7 +42,7 @@ from utils import (
     FAMILY_INVOLVEMENT_KEY, FAM_NAME_KEY, FAM_RELATION_KEY, FAM_ROLE_KEY, FAM_PERIOD_KEY,
     # Default options (if needed directly, though usually used in init)
     ETHNIC_OPTIONS_DEFAULT_FOR_INIT, RELIGION_OPTIONS_DEFAULT_FOR_INIT,
-    PDF_TEMPLATE_PATH
+    PDF_TEMPLATE_PATH, PDF_FILENAME
 )
 
 # --- Validation Execution Function ---
@@ -155,7 +155,7 @@ async def create_and_download_pdf() -> None:
             flatten=True
         )
         pdf_content_bytes: bytes = Path(output_pdf_path_str).read_bytes()
-        ui.download(src=pdf_content_bytes, filename="SoYeuLyLich_DaDien.pdf")
+        ui.download(src=pdf_content_bytes, filename=PDF_FILENAME)
         ui.notify("Đã tạo PDF thành công! Kiểm tra mục tải xuống của bạn.", type='positive', close_button=True)
 
     except FileNotFoundError:
@@ -513,23 +513,23 @@ def render_step4() -> None:
     ui.markdown('Các thông tin dưới đây là bắt buộc nếu bạn nộp hồ sơ vào cơ quan Nhà nước/Quân đội.')
 
     # --- Section A: Party & Youth Union Information ---
-    with ui.expansion("A. Thông tin Đảng/Đoàn", icon='groups').classes('w-full q-mb-md shadow-1 rounded-borders'):
+    with ui.expansion("A. Thông tin Đoàn/Đảng", icon='groups').classes('w-full q-mb-md shadow-1 rounded-borders'):
         with ui.column().classes('q-pa-md'):
             # Party Membership: "Chưa vào" (Not a member) is a valid final answer.
             # Default is "Chưa vào". Validation ensures a choice is actively registered.
-            _add_field("Đảng viên Đảng CSVN?", PARTY_MEMBERSHIP_KEY, Vl.validate_choice_made,
+            _add_field("Đoàn viên?", YOUTH_MEMBERSHIP_KEY, Vl.validate_choice_made,
+                input_type='select', options=["Chưa vào", "Đã vào"]
+            )
+            if current_form_data.get(YOUTH_MEMBERSHIP_KEY) == "Đã vào":
+                _add_field("Ngày kết nạp Đoàn", YOUTH_DATE_KEY, Vl.validate_date_required, 
+                           input_type='date'
+                )
+            # Youth Union Membership: "Chưa vào" (Not a member) is a valid final answer.
+            _add_field("Đảng viên?", PARTY_MEMBERSHIP_KEY, Vl.validate_choice_made,
                 input_type='select', options=["Chưa vào", "Đã vào"]
             )
             if current_form_data.get(PARTY_MEMBERSHIP_KEY) == "Đã vào":
                 _add_field("Ngày kết nạp Đảng", PARTY_DATE_KEY, Vl.validate_date_required, 
-                           input_type='date'
-                )
-            # Youth Union Membership: "Chưa vào" (Not a member) is a valid final answer.
-            _add_field("Đoàn viên TNCS Hồ Chí Minh?", YOUTH_MEMBERSHIP_KEY, Vl.validate_choice_made,
-                input_type='select', options=["Chưa vào", "Đã vào"]
-            )
-            if current_form_data .get(YOUTH_MEMBERSHIP_KEY) == "Đã vào":
-                _add_field("Ngày kết nạp Đoàn", YOUTH_DATE_KEY, Vl.validate_date_required, 
                            input_type='date'
                 )
 
@@ -548,25 +548,25 @@ def render_step4() -> None:
                 input_type='select', options=religion_options
             )
 
-    # --- Section C: Family Involvement ---
-    with ui.expansion("C. Gia đình (chỉ điền nếu có người thân liên quan trực tiếp đến cách mạng/quân đội)", icon='family_restroom')\
-        .classes('w-full q-mb-md shadow-1 rounded-borders'):
-        with ui.column().classes('q-pa-md'):
-            # Family Involvement: "Không" (No such family members) is a valid final answer.
-            # Radio options for Yes/No.
-            radio_options_fam: Dict[str, str] = {"Không": "Không có", "Có": "Có người thân"} # Clearer labels
-            _add_field("Gia đình có người thân (bố, mẹ, vợ/chồng, anh chị em ruột) từng/đang tham gia \
-                       cách mạng, phục vụ trong quân đội hoặc giữ chức vụ trong cơ quan Nhà nước?",
-                FAMILY_INVOLVEMENT_KEY, Vl.validate_choice_made, 
-                input_type='radio', options=radio_options_fam 
-            )
+    # # --- Section C: Family Involvement ---
+    # with ui.expansion("C. Gia đình (chỉ điền nếu có người thân liên quan trực tiếp đến cách mạng/quân đội)", icon='family_restroom')\
+    #     .classes('w-full q-mb-md shadow-1 rounded-borders'):
+    #     with ui.column().classes('q-pa-md'):
+    #         # Family Involvement: "Không" (No such family members) is a valid final answer.
+    #         # Radio options for Yes/No.
+    #         radio_options_fam: Dict[str, str] = {"Không": "Không có", "Có": "Có người thân"} # Clearer labels
+    #         _add_field("Gia đình có người thân (bố, mẹ, vợ/chồng, anh chị em ruột) từng/đang tham gia \
+    #                    cách mạng, phục vụ trong quân đội hoặc giữ chức vụ trong cơ quan Nhà nước?",
+    #             FAMILY_INVOLVEMENT_KEY, Vl.validate_choice_made, 
+    #             input_type='radio', options=radio_options_fam 
+    #         )
             
-            if current_form_data .get(FAMILY_INVOLVEMENT_KEY) == "Có":
-                ui.markdown("Vui lòng kê khai thông tin người thân đó:").classes("text-caption q-mt-sm")
-                _add_field("Họ tên người thân", FAM_NAME_KEY, Vl.validate_text_input_required)
-                _add_field("Quan hệ với bạn", FAM_RELATION_KEY, Vl.validate_text_input_required)
-                _add_field("Hoạt động/Chức vụ chính", FAM_ROLE_KEY, Vl.validate_text_input_required)
-                _add_field("Thời gian giữ chức vụ (VD: 1965-1975 hoặc 2000-nay)", FAM_PERIOD_KEY, Vl.validate_text_input_required)
+    #         if current_form_data .get(FAMILY_INVOLVEMENT_KEY) == "Có":
+    #             ui.markdown("Vui lòng kê khai thông tin người thân đó:").classes("text-caption q-mt-sm")
+    #             _add_field("Họ tên người thân", FAM_NAME_KEY, Vl.validate_text_input_required)
+    #             _add_field("Quan hệ với bạn", FAM_RELATION_KEY, Vl.validate_text_input_required)
+    #             _add_field("Hoạt động/Chức vụ chính", FAM_ROLE_KEY, Vl.validate_text_input_required)
+    #             _add_field("Thời gian giữ chức vụ (VD: 1965-1975 hoặc 2000-nay)", FAM_PERIOD_KEY, Vl.validate_text_input_required)
         
     # --- 3. Navigation Buttons ---
     with ui.row().classes('w-full q-mt-lg justify-between items-center'):
