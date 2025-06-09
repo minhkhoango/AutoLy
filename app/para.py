@@ -18,6 +18,13 @@ degrees: List[str] = [
     "Văn bằng 2"
 ]
 
+training_format: List[str] = [
+    "Chính quy",
+    "Tại chức",
+    "Từ xa",
+    "Liên thông"
+]
+
 ethnic_groups_vietnam: List[str] = [
     "Kinh",
     "Tày",

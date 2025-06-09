@@ -18,69 +18,106 @@ DATE_FORMAT_DISPLAY: str = '%d/%m/%Y'
 # Keys for app.storage.user
 STEP_KEY: str = 'step'
 FORM_DATA_KEY: str = 'form_data'
-NEED_CLEARANCE_KEY: str = 'need_clearance'
+NEEDS_CLEARANCE_KEY: str = 'needs_clearance'
 FORM_ATTEMPTED_SUBMISSION_KEY: str = 'form_attempted_submission'
 CURRENT_STEP_ERRORS_KEY: str = 'current_step_errors'
+# A robust way to define your application's structure
 
 # --- Form Data Keys (used within FORM_DATA_KEY dict) ---
-# Step 0
+# Step 1
 STEP0_ANS_KEY: str = 'step0_ans'
 
-# Step 1 (Personal Info)
+# Step 2 (Personal Info)
 FULL_NAME_KEY: str = 'full_name'
 GENDER_KEY: str = 'gender'
 DOB_KEY: str = 'dob' 
+BIRTH_PLACE_KEY: str = 'birth_place'
+
+# Step 3 (Official id)
 ID_PASSPORT_NUM_KEY: str = 'id_passport_num'
 ID_PASSPORT_ISSUE_DATE_KEY: str = 'id_passport_issue_date'
 ID_PASSPORT_ISSUE_PLACE_KEY: str = 'id_passport_issue_place'
-## MENTOR NOTE: Added new app-side keys for health info, which will be needed for the PDF.
-HEALTH_KEY: str = 'health'
-HEIGHT_KEY: str = 'height'
-WEIGHT_KEY: str = 'weight'
 
-# Step 2 (Contact & Address)
+# Step 4 (contact)
 REGISTERED_ADDRESS_KEY: str = 'registered_address'
 PHONE_KEY: str = 'phone'
-EMERGENCY_CONTACT_COMBINED_KEY: str = 'emergency_contact_combined'
-EMERGENCY_PLACE_KEY: str = 'emergency_place'
-SAME_ADDRESS1_KEY: str = 'same_address1' 
 
-# Step 3 (Education & Work)
+# Step 5 (origin_info)
+ETHNICITY_KEY: str = 'ethnicity' 
+RELIGION_KEY: str = 'religion'  
+PLACE_OF_ORIGIN_KEY: str = 'place_of_origin'
+
+# Step 6 (education)
+FOREIGN_LANGUAGE: str = 'foreign_language'
+EDUCATION_HIGH_SCHOOL_KEY: str = 'cultural_level'
 EDUCATION_HIGHEST_KEY: str = 'highest_education'
 EDUCATION_MAJOR_KEY: str = 'specialized_area'
-WORK_DF_KEY: str = 'work_df' 
+EDUCATION_FORMAT_KEY: str = 'education_format'
 
-# Keys for individual entries within the WORK_DF_KEY list
-WORK_FROM_DATE_KEY: str = "Từ (tháng/năm)"
-WORK_TO_DATE_KEY: str = "Đến (tháng/năm)"
-WORK_TASK_KEY: str = "Nhiệm vụ công tác" 
-WORK_UNIT_KEY: str = "Đơn vị công tác"
-WORK_ROLE_KEY: str = "Chức vụ"
+# Step 7 (work history)
+WORK_DATAFRAME_KEY: str = 'work_dataframe'
+WORK_FROM_DATE_KEY: str = "work_from"
+WORK_TO_DATE_KEY: str = "work_to"
+WORK_TASK_KEY: str = "work_task" 
+WORK_UNIT_KEY: str = "work_unit"
+WORK_ROLE_KEY: str = "work_work"
 
-# Step 4 (Clearance & Family Info)
-PARTY_MEMBERSHIP_KEY: str = 'party_membership'
-PARTY_DATE_KEY: str = 'party_date'
-YOUTH_MEMBERSHIP_KEY: str = 'youth_membership'
-YOUTH_DATE_KEY: str = 'youth_date'
-ETHNICITY_KEY: str = 'ethnicity' 
-RELIGION_KEY: str = 'religion'   
+# Step 8 (award)
+AWARD_KEY: str = 'award'
+DISCIPLINE_KEY: str = 'discipline'
 
-## MENTOR NOTE: Added specific keys for family members. This is more robust than a generic 'family_involvement'.
-# You will need to build UI elements in your steps to capture this data.
+# Step 9 (basic parents info)
 DAD_NAME_KEY: str = 'dad_name'
 DAD_AGE_KEY: str = 'dad_age'
 DAD_JOB_KEY: str = 'dad_job'
+
 MOM_NAME_KEY: str = 'mom_name'
 MOM_AGE_KEY: str = 'mom_age'
 MOM_JOB_KEY: str = 'mom_job'
-SIBLINGS_KEY: str = 'siblings_list' # List of dicts: {'name_age': '...', 'job': '...'}
+
+# Step 10 (sibling info)
+SIBLING_DATAFRAME_KEY: str = 'sibling_dataframe'
+SIBLING_NAME_KEY: str = 'sibling_name'
+SIBLING_AGE_KEY: str = 'sibling_dob'
+SIBLING_POLITICAL_LEVEL_KEY: str = 'sibling_political_level'
+# Step 11 (spouse and kids)
 SPOUSE_NAME_KEY: str = 'spouse_name'
 SPOUSE_AGE_KEY: str = 'spouse_age'
 SPOUSE_JOB_KEY: str = 'spouse_job'
-CHILDREN_KEY: str = 'children_list' # List of dicts: {'name': '...', 'age': '...'}
+
+CHILD_DATAFRAME_KEY: str = 'child_dataframe'
+CHILD_NAME_KEY: str = 'child_name'
+CHILD_AGE_KEY: str = 'child_age'
+CHILD_JOB_KEY: str = 'child_job'
+
+# Step 12 conditional (social standing)
+SOCIAL_STANDING_KEY: str = 'social_standing'
+FAMILY_STANDING_KEY: str = 'family_standing'
+
+# Step 13 conditional (gov affiliation)
+YOUTH_DATE_KEY: str = 'youth_date'
+PARTY_DATE_KEY: str = 'party_date'
+
+# Step 14 conditional (parent history)
+PRE_AUGUST_REVOLUTION_KEY: str = 'pre_august_revolution'
+DURING_FRENCH_WAR_KEY: str = 'during_french_war'
+FROM_1955_PRESENT_KEY: str = 'from_1955_present'
+
+# Step 15 (health for military)
+HEALTH_KEY: str = 'health'
+HEIGHT_KEY: str = 'height'
+WEIGHT_KEY: str = 'weight'
+JOIN_ARMY_DATE_KEY: str = 'join_army_date'
+LEAVE_ARMY_DATE_KEY: str = 'leave_army_date'
+
+# Step 16 (emergency contact)
+EMERGENCY_CONTACT_DETAILS_KEY: str = 'emergency_contact'
+EMERGENCY_CONTACT_PLACE_KEY: str = 'emergency_place'
 
 # --- PDF Field Name Constants (for data_for_pdf keys) ---
 ## MENTOR NOTE: Using your new, cleaner key structure without the '_pdf' suffix and with P1/P2 for duplicates.
+
+# Step 2 (Personal Info)
 PDF_FULL_NAME_P1_KEY: str = 'full_name_p1' 
 PDF_FULL_NAME_P2_KEY: str = 'full_name_p2' 
 PDF_GENDER_KEY: str = 'gender'
@@ -88,40 +125,46 @@ PDF_GENDER_KEY: str = 'gender'
 PDF_DOB_DAY_P1_KEY:str = 'dob_day_p1'
 PDF_DOB_MONTH_P1_KEY: str = 'dob_month_p1'
 PDF_DOB_YEAR_P1_KEY:str = 'dob_year_p1'
+
 PDF_DOB_DAY_P2_KEY:str = 'dob_day_p2'
 PDF_DOB_MONTH_P2_KEY: str = 'dob_month_p2'
 PDF_DOB_YEAR_P2_KEY:str = 'dob_year_p2'
 
-PDF_REGISTERED_ADDRESS_P1_KEY: str = 'registered_address_p1'
-PDF_REGISTERED_ADDRESS_P2_KEY: str = 'registered_address_p2'
-
+# Step 3 (Official id)
 PDF_ID_NUM_KEY: str = 'id_number'
 PDF_ID_ISSUE_DAY_KEY: str = 'id_issue_day'
 PDF_ID_ISSUE_MONTH_KEY: str = 'id_issue_month'
 PDF_ID_ISSUE_YEAR_KEY: str = 'id_issue_year'
 PDF_ID_ISSUE_PLACE_KEY: str = 'id_issue_place'
 
+# Step 4 (contact)
+PDF_REGISTERED_ADDRESS_P1_KEY: str = 'registered_address_p1'
+PDF_REGISTERED_ADDRESS_P2_KEY: str = 'registered_address_p2'
 PDF_PHONE_MOBILE_KEY: str = 'phone_mobile'
-PDF_EMERGENCY_CONTACT_DETAILS_KEY: str = 'emergency_contact_details'
-PDF_EMERGENCY_CONTACT_ADDRESS_KEY: str = 'emergency_contact_address'
 
+# Step 5 (origin_info)
 PDF_ETHNICITY_KEY: str = 'ethnicity'
 PDF_RELIGION_KEY: str = 'religion'
+PDF_PLACE_OF_ORIGIN_KEY: str = 'place_of_origin'
 
-PDF_HIGHEST_EDUCATION_KEY: str = 'highest_education'
-PDF_SPECIALIZED_AREA_KEY: str = 'specialized_area'
+# Step 6 (education)
+PDF_FOREIGN_LANGUAGE: str = 'foreign_language'
+PDF_EDUCATION_HIGH_SCHOOL_KEY: str = 'cultural_level'
+PDF_EDUCATION_HIGHEST_KEY: str = 'highest_education'
+PDF_EDUCATION_MAJOR_KEY: str = 'specialized_area'
+PDF_EDUCATION_FORMAT_KEY: str = 'education_format'
 
-PDF_YOUTH_ADM_DAY_KEY: str = 'youth_adm_day'
-PDF_YOUTH_ADM_MONTH_KEY: str = 'youth_adm_month'
-PDF_YOUTH_ADM_YEAR_KEY: str = 'youth_adm_year'
-PDF_PARTY_ADM_DAY_KEY: str = 'party_adm_day'
-PDF_PARTY_ADM_MONTH_KEY: str = 'party_adm_month'
-PDF_PARTY_ADM_YEAR_KEY: str = 'party_adm_year'
+# Step 7 (work history)
+PDF_WORK_FROM_TO_KEY: str = 'work_from_to_'
+PDF_WORK_TASK_KEY: str = 'work_task_'
+PDF_WORK_UNIT_KEY: str = 'work_unit_'
+PDF_WORK_ROLE_KEY: str = 'work_role_'
 
-PDF_HEALTH_KEY: str = 'health'
-PDF_HEIGHT_KEY: str = 'height'
-PDF_WEIGHT_KEY: str = 'weight'
+# Step 8 (award)
+PDF_AWARD_KEY: str = 'award'
+PDF_DISCIPLINE_KEY: str = 'discipline'
 
+# Step 9 (basic parents info)
 PDF_DAD_NAME_KEY: str = 'dad_name'
 PDF_DAD_AGE_KEY: str = 'dad_age'
 PDF_DAD_JOB_KEY: str = 'dad_job'
@@ -130,8 +173,11 @@ PDF_MOM_NAME_KEY: str = 'mom_name'
 PDF_MOM_AGE_KEY: str = 'mom_age'
 PDF_MOM_JOB_KEY: str = 'mom_job'
 
-PDF_SIBLING_INFO_KEY: str = 'sibling_info_' # Note the trailing underscore for looping
+# Step 10 (sibling info)
+PDF_SIBLING_INFO_KEY: str = 'sibling_info_'
+PDF_SIBLING_POLITICAL_LEVEL_KEY: str = 'sibling_political_level'
 
+# Step 11 (spouse and kids)
 PDF_SPOUSE_NAME_KEY: str = 'spouse_name'
 PDF_SPOUSE_AGE_KEY: str = 'spouse_age'
 PDF_SPOUSE_JOB_KEY: str = 'spouse_job'
@@ -140,16 +186,35 @@ PDF_CHILD_NAME_KEY: str = 'child_name_' # Note the trailing underscore
 PDF_CHILD_AGE_KEY: str = 'child_age_' # Note the trailing underscore
 PDF_CHILD_JOB_KEY: str = 'child_job_' # Note the trailing underscore
 
-PDF_WORK_FROM_TO_KEY: str = 'work_from_to_'
-PDF_WORK_TASK_KEY: str = 'work_task_'
-PDF_WORK_UNIT_KEY: str = 'work_unit_'
-PDF_WORK_ROLE_KEY: str = 'work_role_'
+# Step 12 conditional (social standing)
+PDF_SOCIAL_STANDING_KEY: str = 'social_standing'
+PDF_FAMILY_STANDING_KEY: str = 'family_standing'
 
-# Default options if not found in para.py
-ETHNIC_OPTIONS_DEFAULT_FOR_INIT: List[str] = ["Kinh", "Tày", "Thái", "Mường", "Khác"]
-RELIGION_OPTIONS_DEFAULT_FOR_INIT: List[str] = ["Không", "Phật giáo", "Công giáo", "Khác"]
+# Step 13 conditional (gov affiliation)
+PDF_YOUTH_ADM_DAY_KEY: str = 'youth_adm_day'
+PDF_YOUTH_ADM_MONTH_KEY: str = 'youth_adm_month'
+PDF_YOUTH_ADM_YEAR_KEY: str = 'youth_adm_year'
+PDF_PARTY_ADM_DAY_KEY: str = 'party_adm_day'
+PDF_PARTY_ADM_MONTH_KEY: str = 'party_adm_month'
+PDF_PARTY_ADM_YEAR_KEY: str = 'party_adm_year'
 
-PDF_TEMPLATE_PATH: str = "assets/Mau-so-yeu-ly-lich-TEMPLATE.pdf" # Ensure this path is correct
+# Step 14 conditional (parent history)
+PDF_PRE_AUGUST_REVOLUTION_KEY: str = 'pre_august_revolution'
+PDF_DURING_FRENCH_WAR_KEY: str = 'during_french_war'
+
+# Step 15 (health for military)
+PDF_HEALTH_KEY: str = 'health'
+PDF_HEIGHT_KEY: str = 'height'
+PDF_WEIGHT_KEY: str = 'weight'
+PDF_JOIN_ARMY_DATE_KEY: str = 'join_army_date'
+PDF_LEAVE_ARMY_DATE_KEY: str = 'leave_army_date'
+
+# Step 16 (emergency contact)
+PDF_EMERGENCY_CONTACT_DETAILS_KEY: str = 'emergency_contact_details'
+PDF_EMERGENCY_CONTACT_ADDRESS_KEY: str = 'emergency_contact_address'
+SAME_ADDRESS1_KEY: str = 'same_address1'
+
+PDF_TEMPLATE_PATH: str = "assets/TEMPLATE-Arial.pdf" # Ensure this path is correct
 PDF_FILENAME: str = "SoYeuLyLich_DaDien.pdf"
 
 # --- Global Helper Function: create_field ---
@@ -355,64 +420,79 @@ def format_display_value(field_key: str,
         except ValueError:
             return f"**{field_value}** (Lỗi định dạng)" # Indicate format error if stored string is wrong
 
-    if field_value is None or (isinstance(field_value, str) and not field_value.strip()):
-        # Check for specific "Chưa vào" or "Không" values that are meaningful "empty" states for some fields
-        if field_key in [PARTY_MEMBERSHIP_KEY, YOUTH_MEMBERSHIP_KEY] and field_value == "Chưa vào":
-            return f"**{str(field_value)}**"
-        # For ethnicity/religion, the default first option might be a valid "empty" like "Kinh" or "Không"
-        # These should be displayed if they are the stored value.
-        # The `create_field` initialization and `_initialize_form_data` set these.
-        # So, if `field_value` is that default (e.g. "Kinh"), it should be shown.
-        # The `(Chưa điền)` should only be for truly absent or empty string values for most text fields.
-
-        # If it's a selection where the first option is like "Không có" (from para.degrees)
-        # and this is the actual stored value, it should be displayed.
-        if field_key == EDUCATION_HIGHEST_KEY and field_value == getattr(para, 'degrees', [""])[0]:
-             return f"**{str(field_value)}**"
-
-
-        return "<em>(Chưa điền)</em>" # Fallback for truly empty or None for other fields
-
     return f"**{str(field_value)}**"
 
 
-def get_label_for_key(field_key: str) -> str:
+def get_key_label(field_key: str) -> str:
     labels_map: Dict[str, str] = {
         STEP0_ANS_KEY: 'Nộp cho cơ quan Nhà nước/Quân đội',
+
         FULL_NAME_KEY: 'Họ và tên',
         GENDER_KEY: 'Giới tính',
         DOB_KEY: 'Ngày sinh',
+        BIRTH_PLACE_KEY: 'Nơi sinh',
+
         ID_PASSPORT_NUM_KEY: 'Số CMND/CCCD',
         ID_PASSPORT_ISSUE_DATE_KEY: 'Ngày cấp CMND/CCCD',
         ID_PASSPORT_ISSUE_PLACE_KEY: 'Nơi cấp CMND/CCCD',
-        HEALTH_KEY: 'Tình hình sức khoẻ',
-        HEIGHT_KEY: 'Chiều cao (cm)',
-        WEIGHT_KEY: 'Cân nặng (kg)',
+        
         REGISTERED_ADDRESS_KEY: 'Địa chỉ hộ khẩu',
         PHONE_KEY: 'Số điện thoại',
-        EMERGENCY_CONTACT_COMBINED_KEY: 'Khi cần báo tin cho',
-        EMERGENCY_PLACE_KEY: 'Địa chỉ báo tin',
-        SAME_ADDRESS1_KEY: 'Nơi báo tin giống địa chỉ hộ khẩu',
-        EDUCATION_HIGHEST_KEY: 'Bằng cấp cao nhất',
-        EDUCATION_MAJOR_KEY: 'Chuyên ngành đào tạo',
-        WORK_DF_KEY: 'III. Quá trình công tác',
-        PARTY_MEMBERSHIP_KEY: 'Đảng viên ĐCSVN',
-        PARTY_DATE_KEY: 'Ngày kết nạp Đảng',
-        YOUTH_MEMBERSHIP_KEY: 'Đoàn viên TNCS',
-        YOUTH_DATE_KEY: 'Ngày kết nạp Đoàn',
+
         ETHNICITY_KEY: 'Dân tộc',
         RELIGION_KEY: 'Tôn giáo',
+        PLACE_OF_ORIGIN_KEY: 'Nguyên quán (quê của bố)',
+
+        FOREIGN_LANGUAGE: 'Ngoại ngữ',
+        EDUCATION_HIGH_SCHOOL_KEY: 'Bạn đã hoàn thành cấp ba (VD: 12/12)',
+        EDUCATION_HIGHEST_KEY: 'Bằng cấp cao nhất',
+        EDUCATION_MAJOR_KEY: 'Chuyên ngành đào tạo',
+        EDUCATION_FORMAT_KEY: 'Loại hình đào tạo',
+
+        WORK_FROM_DATE_KEY: "Từ tháng năm (TT/YYYY)",
+        WORK_TO_DATE_KEY: "Đến tháng năm (TT/YYYY)",
+        WORK_TASK_KEY: "Nhiệm vụ công tác",
+        WORK_UNIT_KEY: "Đơn vị công tác",
+        WORK_ROLE_KEY: "Chức vụ công tác",
+
+        AWARD_KEY: 'Khen thưởng',
+        DISCIPLINE_KEY: 'Kỷ luật',
+
         DAD_NAME_KEY: 'Họ tên Bố',
         DAD_AGE_KEY: 'Tuổi Bố',
         DAD_JOB_KEY: 'Nghề nghiệp Bố',
         MOM_NAME_KEY: 'Họ tên Mẹ',
         MOM_AGE_KEY: 'Tuổi Mẹ',
         MOM_JOB_KEY: 'Nghề nghiệp Mẹ',
+
+        SIBLING_NAME_KEY: 'Họ tên anh chị em',
+        SIBLING_AGE_KEY: 'Tuổi anh chị em',
+        SIBLING_POLITICAL_LEVEL_KEY: 'Trình độ chính trị anh chị em',
+
         SPOUSE_NAME_KEY: 'Họ tên Vợ/Chồng',
         SPOUSE_AGE_KEY: 'Tuổi Vợ/Chồng',
         SPOUSE_JOB_KEY: 'Nghề nghiệp Vợ/Chồng',
-        SIBLINGS_KEY: 'Anh chị em ruột',
-        CHILDREN_KEY: 'Các con',
+
+        CHILD_NAME_KEY: 'Họ và tên con',
+        CHILD_AGE_KEY: 'Tuổi con',
+        CHILD_JOB_KEY: 'Nghề nghiệp con',
+
+        SOCIAL_STANDING_KEY: 'Thành phần bản thân hiện nay',
+        FAMILY_STANDING_KEY: 'Thành phần gia đình sau cải cách ruộng đất',
+
+        YOUTH_DATE_KEY: 'Ngày kết nạp Đoàn',
+        PARTY_DATE_KEY: 'Ngày kết nạp Đảng',
+
+        PRE_AUGUST_REVOLUTION_KEY: 'Trước cách mạng tháng 8 \
+            làm gì? Ở đâu',
+        DURING_FRENCH_WAR_KEY: 'Trong kháng chiến chống \
+            thực dân Pháp làm gì? Ở đâu',
+        FROM_1955_PRESENT_KEY: 'Từ 1955 đến nay làm gì? Ở đâu?\
+            (Ghi rõ tên cơ quan, xí nghiệp hiện nay đang làm)',
+
+        EMERGENCY_CONTACT_DETAILS_KEY: 'Khi cần báo tin cho',
+        EMERGENCY_CONTACT_PLACE_KEY: 'Địa chỉ báo tin',
+        SAME_ADDRESS1_KEY: 'Nơi báo tin giống địa chỉ hộ khẩu',
     }
     return labels_map.get(field_key, field_key.replace('_KEY', '').replace('_', ' ').title())
 
@@ -420,48 +500,70 @@ def get_label_for_key(field_key: str) -> str:
 def initialize_form_data(form_data_to_populate: Dict[str, Any]) -> None:
     """Populates the provided dictionary with default form field values."""
     form_data_to_populate[STEP0_ANS_KEY] = 'Không'
-    # Step 1
-    form_data_to_populate[FULL_NAME_KEY] = ""
-    form_data_to_populate[GENDER_KEY] = ""
+
+    form_data_to_populate[FULL_NAME_KEY] = ''
+    form_data_to_populate[GENDER_KEY] = ''
     form_data_to_populate[DOB_KEY] = None
-    form_data_to_populate[ID_PASSPORT_NUM_KEY] = ""
+    form_data_to_populate[BIRTH_PLACE_KEY] = ''
+
+    form_data_to_populate[ID_PASSPORT_NUM_KEY] = ''
     form_data_to_populate[ID_PASSPORT_ISSUE_DATE_KEY] = None
-    form_data_to_populate[ID_PASSPORT_ISSUE_PLACE_KEY] = ""
-    form_data_to_populate[HEALTH_KEY] = ""
-    form_data_to_populate[HEIGHT_KEY] = ""
-    form_data_to_populate[WEIGHT_KEY] = ""
-    # Step 2
-    form_data_to_populate[REGISTERED_ADDRESS_KEY] = ""
-    form_data_to_populate[PHONE_KEY] = ""
-    form_data_to_populate[EMERGENCY_CONTACT_COMBINED_KEY] = ""
-    form_data_to_populate[EMERGENCY_PLACE_KEY] = ""
-    form_data_to_populate[SAME_ADDRESS1_KEY] = False
-    # Step 3
-    degrees_options: List[str] = getattr(para, 'degrees', [""])
-    form_data_to_populate[EDUCATION_HIGHEST_KEY] = degrees_options[0] if degrees_options else ""
-    form_data_to_populate[EDUCATION_MAJOR_KEY] = ""
-    form_data_to_populate[WORK_DF_KEY] = []
-    # Step 4
-    form_data_to_populate[PARTY_MEMBERSHIP_KEY] = "Chưa vào"
+    form_data_to_populate[ID_PASSPORT_ISSUE_PLACE_KEY] = ''
+
+    form_data_to_populate[REGISTERED_ADDRESS_KEY] = ''
+    form_data_to_populate[PHONE_KEY] = ''
+
+    ethnic_groups: List[str] = getattr(para, 'ethnic_groups_vietnam', ['Kinh'])
+    form_data_to_populate[ETHNICITY_KEY] = ethnic_groups[0]
+    religion_opts: List[str] = getattr(para, 'religion_options', ['Không'])
+    form_data_to_populate[RELIGION_KEY] = religion_opts[0]
+    form_data_to_populate[PLACE_OF_ORIGIN_KEY] = ''
+
+    form_data_to_populate[FOREIGN_LANGUAGE] = ''
+    form_data_to_populate[EDUCATION_HIGH_SCHOOL_KEY] = ''
+    degrees_options: List[str] = getattr(para, 'degrees', [''])
+    form_data_to_populate[EDUCATION_HIGHEST_KEY] = degrees_options[0]
+    form_data_to_populate[EDUCATION_MAJOR_KEY] = ''
+    form_data_to_populate[EDUCATION_FORMAT_KEY] = ''
+
+    form_data_to_populate[WORK_FROM_DATE_KEY] = ''
+    form_data_to_populate[WORK_TO_DATE_KEY] = ''
+    form_data_to_populate[WORK_TASK_KEY] = ''
+    form_data_to_populate[WORK_UNIT_KEY] = ''
+    form_data_to_populate[WORK_ROLE_KEY] = ''
+
+    form_data_to_populate[AWARD_KEY] = 'Không có'
+    form_data_to_populate[DISCIPLINE_KEY] = 'Không có'
+
+    form_data_to_populate[DAD_NAME_KEY] = ''
+    form_data_to_populate[DAD_AGE_KEY] = ''
+    form_data_to_populate[DAD_JOB_KEY] = ''
+    form_data_to_populate[MOM_NAME_KEY] = ''
+    form_data_to_populate[MOM_AGE_KEY] = ''
+    form_data_to_populate[MOM_JOB_KEY] = ''
+
+    form_data_to_populate[SIBLING_NAME_KEY] = ''
+    form_data_to_populate[SIBLING_AGE_KEY] = ''
+    form_data_to_populate[SIBLING_POLITICAL_LEVEL_KEY] = 'Không'
+
+    form_data_to_populate[SPOUSE_NAME_KEY] = ''
+    form_data_to_populate[SPOUSE_AGE_KEY] = ''
+    form_data_to_populate[SPOUSE_JOB_KEY] = ''
+
+    form_data_to_populate[CHILD_NAME_KEY] = ''
+    form_data_to_populate[CHILD_AGE_KEY] = ''
+    form_data_to_populate[CHILD_JOB_KEY] = ''
+
     form_data_to_populate[PARTY_DATE_KEY] = None
-    form_data_to_populate[YOUTH_MEMBERSHIP_KEY] = "Chưa vào"
     form_data_to_populate[YOUTH_DATE_KEY] = None
-    ethnic_groups: List[str] = getattr(para, 'ethnic_groups_vietnam', ETHNIC_OPTIONS_DEFAULT_FOR_INIT)
-    form_data_to_populate[ETHNICITY_KEY] = ethnic_groups[0] if ethnic_groups else ETHNIC_OPTIONS_DEFAULT_FOR_INIT[0]
-    religion_opts: List[str] = getattr(para, 'religion_options', RELIGION_OPTIONS_DEFAULT_FOR_INIT)
-    form_data_to_populate[RELIGION_KEY] = religion_opts[0] if religion_opts else RELIGION_OPTIONS_DEFAULT_FOR_INIT[0]
-    # Family Info
-    form_data_to_populate[DAD_NAME_KEY] = ""
-    form_data_to_populate[DAD_AGE_KEY] = ""
-    form_data_to_populate[DAD_JOB_KEY] = ""
-    form_data_to_populate[MOM_NAME_KEY] = ""
-    form_data_to_populate[MOM_AGE_KEY] = ""
-    form_data_to_populate[MOM_JOB_KEY] = ""
-    form_data_to_populate[SPOUSE_NAME_KEY] = ""
-    form_data_to_populate[SPOUSE_AGE_KEY] = ""
-    form_data_to_populate[SPOUSE_JOB_KEY] = ""
-    form_data_to_populate[SIBLINGS_KEY] = []
-    form_data_to_populate[CHILDREN_KEY] = []
+
+    form_data_to_populate[PRE_AUGUST_REVOLUTION_KEY] = 'Không rõ'
+    form_data_to_populate[DURING_FRENCH_WAR_KEY] = 'Không rõ'
+    form_data_to_populate[FROM_1955_PRESENT_KEY] = ''
+
+    form_data_to_populate[EMERGENCY_CONTACT_DETAILS_KEY] = ''
+    form_data_to_populate[EMERGENCY_CONTACT_PLACE_KEY] = ''
+    form_data_to_populate[SAME_ADDRESS1_KEY] = False
 
 # --- PDF Data Mapping Utility ---
 def _split_date_for_pdf(date_str: Optional[str],
@@ -486,73 +588,50 @@ def generate_pdf_data_mapping(
     Transforms data from the application's format into a dictionary
     where keys are the PDF form field names.
     """
-    from copy import copy
     data_for_pdf: Dict[str, Any] = {}
-    # --- Section 1: Basic Information & Health ---
-    full_name_val: str = form_data_app.get(FULL_NAME_KEY, '')
-    data_for_pdf[PDF_FULL_NAME_P1_KEY] = copy(full_name_val)
-    data_for_pdf[PDF_FULL_NAME_P2_KEY] = copy(full_name_val)
     
+    # --- Personal Info & ID ---
+    name = form_data_app.get(FULL_NAME_KEY, '')
+    data_for_pdf[PDF_FULL_NAME_P1_KEY] = name
+    data_for_pdf[PDF_FULL_NAME_P2_KEY] = name
     data_for_pdf[PDF_GENDER_KEY] = form_data_app.get(GENDER_KEY, '')
+    
+    dob_day, dob_month, dob_year = _split_date_for_pdf(form_data_app.get(DOB_KEY), date_format_nicegui_app)
+    data_for_pdf[PDF_DOB_DAY_P1_KEY], data_for_pdf[PDF_DOB_MONTH_P1_KEY], data_for_pdf[PDF_DOB_YEAR_P1_KEY] = dob_day, dob_month, dob_year
+    data_for_pdf[PDF_DOB_DAY_P2_KEY], data_for_pdf[PDF_DOB_MONTH_P2_KEY], data_for_pdf[PDF_DOB_YEAR_P2_KEY] = dob_day, dob_month, dob_year
+
     data_for_pdf[PDF_ID_NUM_KEY] = form_data_app.get(ID_PASSPORT_NUM_KEY, '')
+    id_day, id_month, id_year = _split_date_for_pdf(form_data_app.get(ID_PASSPORT_ISSUE_DATE_KEY), date_format_nicegui_app)
+    data_for_pdf[PDF_ID_ISSUE_DAY_KEY], data_for_pdf[PDF_ID_ISSUE_MONTH_KEY], data_for_pdf[PDF_ID_ISSUE_YEAR_KEY] = id_day, id_month, id_year
     data_for_pdf[PDF_ID_ISSUE_PLACE_KEY] = form_data_app.get(ID_PASSPORT_ISSUE_PLACE_KEY, '')
-    
-    data_for_pdf[PDF_HEALTH_KEY] = form_data_app.get(HEALTH_KEY, '')
-    data_for_pdf[PDF_HEIGHT_KEY] = form_data_app.get(HEIGHT_KEY, '')
-    data_for_pdf[PDF_WEIGHT_KEY] = form_data_app.get(WEIGHT_KEY, '')
 
-    dob_string = form_data_app.get(DOB_KEY)
-    day, month, year = _split_date_for_pdf(dob_string, date_format_nicegui_app)
-    data_for_pdf[PDF_DOB_DAY_P1_KEY], data_for_pdf[PDF_DOB_MONTH_P1_KEY], data_for_pdf[PDF_DOB_YEAR_P1_KEY] = day, month, year
-    data_for_pdf[PDF_DOB_DAY_P2_KEY], data_for_pdf[PDF_DOB_MONTH_P2_KEY], data_for_pdf[PDF_DOB_YEAR_P2_KEY] = day, month, year
-
-    id_issue_date_string = form_data_app.get(ID_PASSPORT_ISSUE_DATE_KEY)
-    data_for_pdf[PDF_ID_ISSUE_DAY_KEY], data_for_pdf[PDF_ID_ISSUE_MONTH_KEY], data_for_pdf[PDF_ID_ISSUE_YEAR_KEY] = \
-        _split_date_for_pdf(id_issue_date_string, date_format_nicegui_app)
-
-    # --- Section 2: Addresses & Contact ---
-    registered_address_val = form_data_app.get(REGISTERED_ADDRESS_KEY, '')
-    data_for_pdf[PDF_REGISTERED_ADDRESS_P1_KEY] = registered_address_val
-    data_for_pdf[PDF_REGISTERED_ADDRESS_P2_KEY] = registered_address_val
+    # --- Contact & Origin ---
+    address = form_data_app.get(REGISTERED_ADDRESS_KEY, '')
+    data_for_pdf[PDF_REGISTERED_ADDRESS_P1_KEY] = address
+    data_for_pdf[PDF_REGISTERED_ADDRESS_P2_KEY] = address
     data_for_pdf[PDF_PHONE_MOBILE_KEY] = form_data_app.get(PHONE_KEY, '')
-    data_for_pdf[PDF_EMERGENCY_CONTACT_DETAILS_KEY] = form_data_app.get(EMERGENCY_CONTACT_COMBINED_KEY, '')
-    data_for_pdf[PDF_EMERGENCY_CONTACT_ADDRESS_KEY] = form_data_app.get(EMERGENCY_PLACE_KEY, '')
-
-    # --- Section 3: Education & Work ---
-    data_for_pdf[PDF_HIGHEST_EDUCATION_KEY] = form_data_app.get(EDUCATION_HIGHEST_KEY, '')
-    data_for_pdf[PDF_SPECIALIZED_AREA_KEY] = form_data_app.get(EDUCATION_MAJOR_KEY, '')
-
-    work_history_list_app = cast(List[Dict[str, Any]], form_data_app.get(WORK_DF_KEY, []))
-    for i in range(max_work_entries_pdf):
-        pdf_idx = i + 1
-        if i < len(work_history_list_app):
-            entry = work_history_list_app[i]
-            from_date, to_date = entry.get(WORK_FROM_DATE_KEY, ""), entry.get(WORK_TO_DATE_KEY, "")
-            data_for_pdf[f'{PDF_WORK_FROM_TO_KEY}{pdf_idx}'] = f"{from_date} - {to_date}" if from_date or to_date else ""
-            data_for_pdf[f'{PDF_WORK_TASK_KEY}{pdf_idx}'] = entry.get(WORK_TASK_KEY, "")
-            data_for_pdf[f'{PDF_WORK_UNIT_KEY}{pdf_idx}'] = entry.get(WORK_UNIT_KEY, "")
-            data_for_pdf[f'{PDF_WORK_ROLE_KEY}{pdf_idx}'] = entry.get(WORK_ROLE_KEY, "")
-        else:
-            data_for_pdf[f'{PDF_WORK_FROM_TO_KEY}{pdf_idx}'] = ""
-            data_for_pdf[f'{PDF_WORK_TASK_KEY}{pdf_idx}'] = ""
-            data_for_pdf[f'{PDF_WORK_UNIT_KEY}{pdf_idx}'] = ""
-            data_for_pdf[f'{PDF_WORK_ROLE_KEY}{pdf_idx}'] = ""
-
-    # --- Section 4: Clearance & Family Data ---
-    if form_data_app.get(PARTY_MEMBERSHIP_KEY) == "Đã vào":
-        party_date_string = form_data_app.get(PARTY_DATE_KEY)
-        data_for_pdf[PDF_PARTY_ADM_DAY_KEY], data_for_pdf[PDF_PARTY_ADM_MONTH_KEY], data_for_pdf[PDF_PARTY_ADM_YEAR_KEY] = \
-            _split_date_for_pdf(party_date_string, date_format_nicegui_app)
-            
-    if form_data_app.get(YOUTH_MEMBERSHIP_KEY) == "Đã vào":
-        youth_date_string = form_data_app.get(YOUTH_DATE_KEY)
-        data_for_pdf[PDF_YOUTH_ADM_DAY_KEY], data_for_pdf[PDF_YOUTH_ADM_MONTH_KEY], data_for_pdf[PDF_YOUTH_ADM_YEAR_KEY] = \
-            _split_date_for_pdf(youth_date_string, date_format_nicegui_app)
-    
+    data_for_pdf[PDF_PLACE_OF_ORIGIN_KEY] = form_data_app.get(PLACE_OF_ORIGIN_KEY, '')
     data_for_pdf[PDF_ETHNICITY_KEY] = form_data_app.get(ETHNICITY_KEY, '')
     data_for_pdf[PDF_RELIGION_KEY] = form_data_app.get(RELIGION_KEY, '')
-    
-    # Parents and Spouse
+
+    # --- Education & Awards ---
+    data_for_pdf[PDF_FOREIGN_LANGUAGE] = form_data_app.get(FOREIGN_LANGUAGE, '')
+    data_for_pdf[PDF_EDUCATION_HIGH_SCHOOL_KEY] = form_data_app.get(EDUCATION_HIGH_SCHOOL_KEY, '')
+    data_for_pdf[PDF_EDUCATION_HIGHEST_KEY] = form_data_app.get(EDUCATION_HIGHEST_KEY, '')
+    data_for_pdf[PDF_EDUCATION_MAJOR_KEY] = form_data_app.get(EDUCATION_MAJOR_KEY, '')
+    data_for_pdf[PDF_EDUCATION_FORMAT_KEY] = form_data_app.get(EDUCATION_FORMAT_KEY, '')
+    data_for_pdf[PDF_AWARD_KEY] = form_data_app.get(AWARD_KEY, '')
+    data_for_pdf[PDF_DISCIPLINE_KEY] = form_data_app.get(DISCIPLINE_KEY, '')
+
+    # --- Work History (Mapping single entry to the first PDF slot) ---
+    work_from = form_data_app.get(WORK_FROM_DATE_KEY, "")
+    work_to = form_data_app.get(WORK_TO_DATE_KEY, "")
+    data_for_pdf[f'{PDF_WORK_FROM_TO_KEY}1'] = f"{work_from} - {work_to}" if work_from or work_to else ""
+    data_for_pdf[f'{PDF_WORK_TASK_KEY}1'] = form_data_app.get(WORK_TASK_KEY, "")
+    data_for_pdf[f'{PDF_WORK_UNIT_KEY}1'] = form_data_app.get(WORK_UNIT_KEY, "")
+    data_for_pdf[f'{PDF_WORK_ROLE_KEY}1'] = form_data_app.get(WORK_ROLE_KEY, "")
+
+    # --- Family ---
     data_for_pdf[PDF_DAD_NAME_KEY] = form_data_app.get(DAD_NAME_KEY, '')
     data_for_pdf[PDF_DAD_AGE_KEY] = form_data_app.get(DAD_AGE_KEY, '')
     data_for_pdf[PDF_DAD_JOB_KEY] = form_data_app.get(DAD_JOB_KEY, '')
@@ -562,6 +641,35 @@ def generate_pdf_data_mapping(
     data_for_pdf[PDF_SPOUSE_NAME_KEY] = form_data_app.get(SPOUSE_NAME_KEY, '')
     data_for_pdf[PDF_SPOUSE_AGE_KEY] = form_data_app.get(SPOUSE_AGE_KEY, '')
     data_for_pdf[PDF_SPOUSE_JOB_KEY] = form_data_app.get(SPOUSE_JOB_KEY, '')
+    
+    # Sibling (mapping single entry to first PDF slot)
+    sibling_info = f"{form_data_app.get(SIBLING_NAME_KEY, '')}, {form_data_app.get(SIBLING_AGE_KEY, '')}"
+    data_for_pdf[f'{PDF_SIBLING_INFO_KEY}1'] = sibling_info if form_data_app.get(SIBLING_NAME_KEY) else ""
+    data_for_pdf[PDF_SIBLING_POLITICAL_LEVEL_KEY] = form_data_app.get(SIBLING_POLITICAL_LEVEL_KEY, '')
+    
+    # Child (mapping single entry to first PDF slot)
+    data_for_pdf[f'{PDF_CHILD_NAME_KEY}1'] = form_data_app.get(CHILD_NAME_KEY, '')
+    data_for_pdf[f'{PDF_CHILD_AGE_KEY}1'] = form_data_app.get(CHILD_AGE_KEY, '')
+    data_for_pdf[f'{PDF_CHILD_JOB_KEY}1'] = form_data_app.get(CHILD_JOB_KEY, '')
+
+    # --- Government/Social ---
+    data_for_pdf[PDF_SOCIAL_STANDING_KEY] = form_data_app.get(SOCIAL_STANDING_KEY, '')
+    data_for_pdf[PDF_FAMILY_STANDING_KEY] = form_data_app.get(FAMILY_STANDING_KEY, '')
+    youth_day, youth_month, youth_year = _split_date_for_pdf(form_data_app.get(YOUTH_DATE_KEY), date_format_nicegui_app)
+    data_for_pdf[PDF_YOUTH_ADM_DAY_KEY], data_for_pdf[PDF_YOUTH_ADM_MONTH_KEY], data_for_pdf[PDF_YOUTH_ADM_YEAR_KEY] = youth_day, youth_month, youth_year
+    party_day, party_month, party_year = _split_date_for_pdf(form_data_app.get(PARTY_DATE_KEY), date_format_nicegui_app)
+    data_for_pdf[PDF_PARTY_ADM_DAY_KEY], data_for_pdf[PDF_PARTY_ADM_MONTH_KEY], data_for_pdf[PDF_PARTY_ADM_YEAR_KEY] = party_day, party_month, party_year
+    data_for_pdf[PDF_PRE_AUGUST_REVOLUTION_KEY] = form_data_app.get(PRE_AUGUST_REVOLUTION_KEY, '')
+    data_for_pdf[PDF_DURING_FRENCH_WAR_KEY] = form_data_app.get(DURING_FRENCH_WAR_KEY, '')
+
+    # --- Health/Military & Emergency ---
+    data_for_pdf[PDF_HEALTH_KEY] = form_data_app.get(HEALTH_KEY, '')
+    data_for_pdf[PDF_HEIGHT_KEY] = form_data_app.get(HEIGHT_KEY, '')
+    data_for_pdf[PDF_WEIGHT_KEY] = form_data_app.get(WEIGHT_KEY, '')
+    data_for_pdf[PDF_JOIN_ARMY_DATE_KEY] = form_data_app.get(JOIN_ARMY_DATE_KEY, '') # Assuming dates are stored as strings here for now
+    data_for_pdf[PDF_LEAVE_ARMY_DATE_KEY] = form_data_app.get(LEAVE_ARMY_DATE_KEY, '')
+    data_for_pdf[PDF_EMERGENCY_CONTACT_DETAILS_KEY] = form_data_app.get(EMERGENCY_CONTACT_DETAILS_KEY, '')
+    data_for_pdf[PDF_EMERGENCY_CONTACT_ADDRESS_KEY] = form_data_app.get(EMERGENCY_CONTACT_PLACE_KEY, '')
 
     # Siblings
     siblings_list = cast(List[Dict[str, Any]], form_data_app.get(SIBLINGS_KEY, []))
@@ -570,7 +678,8 @@ def generate_pdf_data_mapping(
         if i < len(siblings_list):
             entry = siblings_list[i]
             # Assuming you have one field for 'Tên, tuổi, chỗ ở, nghề nghiệp, trình độ'
-            sibling_info = f"{entry.get('name', '')}, {entry.get('age', '')} tuổi. Nghề nghiệp: {entry.get('job', '')}. Chỗ ở: {entry.get('address', '')}"
+            sibling_info = f"{entry.get('name', '')}, {entry.get('age', '')} tuổi. Nghề nghiệp: \
+                {entry.get('job', '')}. Chỗ ở: {entry.get('address', '')}"
             data_for_pdf[f'{PDF_SIBLING_INFO_KEY}{pdf_idx}'] = sibling_info
         else:
             data_for_pdf[f'{PDF_SIBLING_INFO_KEY}{pdf_idx}'] = ""

@@ -1,9 +1,14 @@
-#!/usr/bin/env python3
+# myapp.py
+
+# ===================================================================
+# 1. IMPORTS
+# All your `from nicegui import ...` etc. go here.
+# ===================================================================
 from nicegui import ui, app
 from nicegui.element import Element
 from nicegui.events import ValueChangeEventArguments
 from datetime import date
-from typing import List, Dict, Any, Optional, Tuple, cast
+from typing import Any, Callable, List, Dict, Optional, Tuple, TypedDict, cast
 
 # Assuming validation.py and para.py are in the same directory or accessible in PYTHONPATH
 from validation import Vl
@@ -21,7 +26,7 @@ from utils import (
     ValidatorEntryType, ValidationFuncType,
     # --- Core App Storage Keys ---
     DATE_FORMAT_NICEGUI, DATE_FORMAT_DISPLAY,
-    STEP_KEY, FORM_DATA_KEY, NEED_CLEARANCE_KEY,
+    STEP_KEY, FORM_DATA_KEY, NEEDS_CLEARANCE_KEY,
     FORM_ATTEMPTED_SUBMISSION_KEY, CURRENT_STEP_ERRORS_KEY,
     # --- Form Data Keys ---
     STEP0_ANS_KEY,
@@ -30,11 +35,12 @@ from utils import (
     ID_PASSPORT_NUM_KEY, ID_PASSPORT_ISSUE_DATE_KEY, ID_PASSPORT_ISSUE_PLACE_KEY,
     HEALTH_KEY, HEIGHT_KEY, WEIGHT_KEY, # New health keys
     # Step 2
-    REGISTERED_ADDRESS_KEY, PHONE_KEY,
+    PLACE_OF_ORIGIN_KEY,
+    BIRTH_PLACE_KEY, REGISTERED_ADDRESS_KEY, PHONE_KEY,
     EMERGENCY_CONTACT_COMBINED_KEY, EMERGENCY_PLACE_KEY,
     SAME_ADDRESS1_KEY, 
     # Step 3
-    EDUCATION_HIGHEST_KEY, EDUCATION_MAJOR_KEY,
+    EDUCATION_HIGH_SCHOOL_KEY, EDUCATION_HIGHEST_KEY, EDUCATION_MAJOR_KEY,
     WORK_DF_KEY, WORK_FROM_DATE_KEY, WORK_TO_DATE_KEY,
     WORK_TASK_KEY, WORK_UNIT_KEY, WORK_ROLE_KEY,
     # Step 4 (NEW - Family)
@@ -50,6 +56,10 @@ from utils import (
     PDF_TEMPLATE_PATH, PDF_FILENAME
 )
 
+# ===================================================================
+# 2. HELPER & NAVIGATION FUNCTIONS
+# (Functions that DON'T depend on STEPS_DEFINITION yet)
+# ===================================================================
 
 # --- Validation Execution Function ---
 def execute_step_validators(
@@ -71,45 +81,6 @@ def execute_step_validators(
             all_valid = False
             new_errors[field_key] = f"{error_prefix} {msg}"
     return all_valid, new_errors
-
-# --- Navigation Functions ---
-def next_step() -> None:
-    user_storage = cast(Dict[str, Any], app.storage.user)
-    current_step: int = cast(int, user_storage.get(STEP_KEY, 0))
-    user_storage[STEP_KEY] = current_step
-
-    # Reset submission attempt and errors for the new step
-    user_storage[FORM_ATTEMPTED_SUBMISSION_KEY] = False
-    user_storage[CURRENT_STEP_ERRORS_KEY] = {}
-    
-    needs_clearance_val: bool = cast(bool, user_storage.get(NEED_CLEARANCE_KEY, False))
-    if current_step == 3 and not needs_clearance_val:
-        user_storage[STEP_KEY] = current_step + 3 # Skip to step 5
-    else:
-        user_storage[STEP_KEY] = current_step + 1
-    
-    update_step_content.refresh()
-
-def prev_step() -> None:
-    user_storage = cast(Dict[str, Any], app.storage.user)
-    current_step: int = cast(int, user_storage.get(STEP_KEY, 0))
-    if current_step > 0:
-        user_storage[STEP_KEY] = current_step
-
-        # Reset submisison_attempt and errors for the new step
-        user_storage[FORM_ATTEMPTED_SUBMISSION_KEY] = False
-        user_storage[CURRENT_STEP_ERRORS_KEY] = {}
-
-        
-        needs_clearance_val: bool = cast(bool, user_storage.get(NEED_CLEARANCE_KEY, False))
-        # Original logic: if current_step == 4 (after decrementing)
-        # This means if we were on step 5 and go back, new current_step is 4.
-        if user_storage[STEP_KEY] == 6 and not needs_clearance_val: # Check the new current step
-            user_storage[STEP_KEY] = current_step - 3 # Skip back from step 4 to step 3
-        else:
-            user_storage[STEP_KEY] = current_step - 1
-        
-        update_step_content.refresh()
 
 # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 # ++ PDF GENERATION ORCHESTRATION (uses utils.generate_pdf_data_mapping)   ++
@@ -190,78 +161,12 @@ def _handle_step_confirmation(
     finally:
         _is_handling_confirmation = False
 
+
+# ===================================================================
+# 3. UI RENDER FUNCTIONS (THE BUILDING BLOCKS)
+# Define all the parts of your UI first.
+# ===================================================================
 # --- UI Rendering Functions for Each Step ---
-@ui.refreshable
-def render_step0() -> None:
-    ui.label('Bắt đầu hồ sơ – Bạn đang nộp cho ai?').classes('text-h6 q-mb-md')
-    ui.markdown('Bạn đang chuẩn bị nộp hồ sơ cho công ty tư nhân, hay cơ quan nhà nước/quân đội?')
-    options_step0: Dict[str, str] = {'Không': 'Không (Công ty tư nhân)', 'Có': 'Có (Cơ quan Nhà nước/Quân đội)'}
-    user_storage = cast(Dict[str, Any], app.storage.user)
-    form_data_s0: Dict[str, Any] = cast(Dict[str, Any], user_storage[FORM_DATA_KEY])
-    current_val_step0: str = cast(str, form_data_s0.get(STEP0_ANS_KEY, 'Không'))
-
-    ui.radio(options_step0, value=current_val_step0,
-             on_change=lambda e: form_data_s0.update({STEP0_ANS_KEY: e.value})) \
-        .props('inline')
-    
-    def _on_next_step0() -> None:
-        ans: Any = form_data_s0.get(STEP0_ANS_KEY)
-        user_storage[NEED_CLEARANCE_KEY] = (ans == 'Có')
-        next_step()
-
-    ui.button("Xác nhận & Tiếp tục →", on_click=_on_next_step0)\
-        .classes('q-mt-md').props('color=primary unelevated')
-
-@ui.refreshable
-def render_step1() -> None:
-    ui.label('Thông tin cá nhân').classes('text-h6 q-mb-sm')
-    ui.markdown('Hãy điền thông tin cá nhân cơ bản nhé. Đừng lo, bạn có thể chỉnh sửa lại sau.')
-
-    validators_for_step1: List[ValidatorEntryType] = []
-    user_storage = cast(Dict[str, Any], app.storage.user)
-    current_step_errors: Dict[str, str] = user_storage.get(CURRENT_STEP_ERRORS_KEY, {})
-    form_attempted: bool = user_storage.get(FORM_ATTEMPTED_SUBMISSION_KEY, False)
-    
-    def _add_field(label: str, key: str, val_func: ValidationFuncType, **kwargs: Any)-> Optional[Element]:
-        element, validator_entry = create_field(
-            label_text=label, storage_key=key, validation_func=val_func,
-            error_message_for_field=current_step_errors.get(key),
-            form_attempted=form_attempted, **kwargs)
-        validators_for_step1.append(validator_entry)
-        return element
-
-    _add_field('Họ và tên (IN HOA)', FULL_NAME_KEY, Vl.validate_full_name)
-    _add_field('Nam/Nữ', GENDER_KEY, Vl.validate_gender, 
-               input_type='select', options=['', 'Nam', 'Nữ']
-    )
-    _add_field('Ngày sinh', DOB_KEY, Vl.validate_dob, input_type='date',
-                 date_min_max=(date(1900, 1, 1), date.today())
-    )
-
-    ui.separator().classes('q-my-md')
-    ui.label("CMND/CCCD").classes('text-subtitle1 q-mb-xs')
-
-    with ui.row().classes('w-full no-wrap q-gutter-x-md items-start'):
-        with ui.column().classes('col'):
-            _add_field('Số CMND/CCCD', ID_PASSPORT_NUM_KEY, Vl.validate_id_number)
-        with ui.column().classes('col-auto').style('min-width: 200px;'):
-            _add_field('Cấp ngày', ID_PASSPORT_ISSUE_DATE_KEY, Vl.validate_id_issue_date,
-                         input_type='date', date_min_max=(date(1900, 1, 1), date.today()))
-        with ui.column().classes('col'):
-            _add_field('Nơi cấp', ID_PASSPORT_ISSUE_PLACE_KEY, Vl.validate_id_issue_place)
-
-    ui.separator().classes('q-my-md')
-    ui.label("Thông tin sức khoẻ").classes('text-subtitle1 q-mb-xs')
-    with ui.row().classes('w-full no-wrap q-gutter-x-md items-start'):
-        _add_field('Tình trạng sức khoẻ', HEALTH_KEY, Vl.validate_text_input_required) # Assuming a simple text validator
-        _add_field('Chiều cao (cm)', HEIGHT_KEY, Vl.validate_text_input_required)
-        _add_field('Cân nặng (kg)', WEIGHT_KEY, Vl.validate_text_input_required)
-
-    with ui.row().classes('w-full q-mt-lg justify-between items-center'):
-        ui.button("← Quay lại", on_click=prev_step).props('flat color=grey')
-        ui.button("Xác nhận & Tiếp tục →",
-                  on_click=lambda: _handle_step_confirmation(
-                      validators_for_step1)).props('color=primary unelevated')
 
 @ui.refreshable
 def render_step2() -> None:
@@ -284,43 +189,44 @@ def render_step2() -> None:
         return element
     
     # --- Field Creation using the helper ---
-    _add_field('Địa chỉ hộ khẩu', REGISTERED_ADDRESS_KEY, Vl.validate_address)
-    _add_field('Số điện thoại', PHONE_KEY, Vl.validate_phone)
-    _add_field('Khi cần báo tin cho ai (Tên, Quan hệ)', \
-               EMERGENCY_CONTACT_COMBINED_KEY, Vl.validate_emergency_contact)
-    
-    emergency_place_input: Optional[Element] = _add_field(
-        'Địa chỉ báo tin (Ở đâu)', EMERGENCY_PLACE_KEY, Vl.validate_emergency_contact_address)
+    if user_storage[NEEDS_CLEARANCE_KEY]:
+        _add_field('Nguyên quán (Nơi sinh của bố)', PLACE_OF_ORIGIN_KEY, Vl.validate_address)
 
-    def toggle_emergency_address(is_same: bool, 
-                                target_input_el: Optional[Element] = \
-                                emergency_place_input) -> None:
-        if is_same:
-            addr_to_copy: Any = current_form_data.get(REGISTERED_ADDRESS_KEY, '')
-            current_form_data[EMERGENCY_PLACE_KEY] = addr_to_copy
-            if target_input_el and isinstance(target_input_el, ui.input):
-                target_input_el.set_value(addr_to_copy)
-                target_input_el.props('disable').update()
-        else:
-            if target_input_el: target_input_el.props(remove='disable').update()
-    
-    def handle_checkbox_change(event: ValueChangeEventArguments) -> None:
-        new_checkbox_value: bool = cast(bool, event.value)
-        # Ensure you are updating the correct dictionary reference from user_storage
-        form_data_from_storage = cast(Dict[str, Any], app.storage.user[FORM_DATA_KEY])
-        form_data_from_storage[SAME_ADDRESS1_KEY] = new_checkbox_value
-        toggle_emergency_address(new_checkbox_value) 
+    if user_storage[NEEDS_CLEARANCE_KEY]:
+        _add_field('Khi cần báo tin cho ai (Tên, Quan hệ)', \
+                EMERGENCY_CONTACT_COMBINED_KEY, Vl.validate_emergency_contact)
+        
+        emergency_place_input: Optional[Element] = _add_field(
+            'Địa chỉ báo tin (Ở đâu)', EMERGENCY_PLACE_KEY, Vl.validate_emergency_contact_address)
 
-    form_data_s2: Dict[str, Any] = cast(Dict[str, Any], app.storage.user[FORM_DATA_KEY])
-    ui.checkbox('Nơi báo tin giống địa chỉ hộ khẩu',
-                value=cast(bool, form_data_s2.get(SAME_ADDRESS1_KEY, False)),
-                on_change=handle_checkbox_change) \
-        .classes('q-mb-sm')
+        def toggle_emergency_address(is_same: bool, 
+                                    target_input_el: Optional[Element] = \
+                                    emergency_place_input) -> None:
+            if is_same:
+                addr_to_copy: Any = current_form_data.get(REGISTERED_ADDRESS_KEY, '')
+                current_form_data[EMERGENCY_PLACE_KEY] = addr_to_copy
+                if target_input_el and isinstance(target_input_el, ui.input):
+                    target_input_el.set_value(addr_to_copy)
+                    target_input_el.props('disable').update()
+            else:
+                if target_input_el: target_input_el.props(remove='disable').update()
+        
+        def handle_checkbox_change(event: ValueChangeEventArguments) -> None:
+            new_checkbox_value: bool = cast(bool, event.value)
+            # Ensure you are updating the correct dictionary reference from user_storage
+            form_data_from_storage = cast(Dict[str, Any], app.storage.user[FORM_DATA_KEY])
+            form_data_from_storage[SAME_ADDRESS1_KEY] = new_checkbox_value
+            toggle_emergency_address(new_checkbox_value) 
 
-    if form_data_s2.get(SAME_ADDRESS1_KEY, False) and emergency_place_input:
-        if isinstance(emergency_place_input, ui.input): emergency_place_input.props('disable')
+        form_data_s2: Dict[str, Any] = cast(Dict[str, Any], app.storage.user[FORM_DATA_KEY])
+        ui.checkbox('Nơi báo tin giống địa chỉ hộ khẩu',
+                    value=cast(bool, form_data_s2.get(SAME_ADDRESS1_KEY, False)),
+                    on_change=handle_checkbox_change) \
+            .classes('q-mb-sm')
 
-        # INTENTIONALLY DO NOTHING ELSE - NO _handle_step_confirmation, no storage changes from here.
+        if form_data_s2.get(SAME_ADDRESS1_KEY, False) and emergency_place_input:
+            if isinstance(emergency_place_input, ui.input): emergency_place_input.props('disable')
+
     with ui.row().classes('w-full q-mt-lg justify-between items-center'):
         ui.button("← Quay lại", on_click=prev_step).props('flat color=grey')
         ui.button("Xác nhận & Tiếp tục →", on_click=lambda:_handle_step_confirmation(
@@ -527,15 +433,6 @@ def render_step4() -> None:
 def render_step5() -> None:
     # ... MENTOR NOTE: This is the old render_step4, now renamed to render_step5_clearance
     user_storage = cast(Dict[str, Any], app.storage.user)
-    if not cast(bool, user_storage.get(NEED_CLEARANCE_KEY, False)):
-        # This case should be handled by the navigation skip, but as a fallback:
-        with ui.column().classes('items-center q-pa-md'):
-            ui.icon('info', size='lg', color='info').classes('q-mb-sm')
-            ui.label("Bước này không bắt buộc cho lựa chọn của bạn.").classes('text-subtitle1 text-info q-mb-md')
-        with ui.row().classes('w-full q-mt-md justify-between items-center'):
-            ui.button("← Quay lại", on_click=prev_step).props('flat color=grey')
-            ui.button("Bỏ qua & Tiếp tục →", on_click=next_step).props('color=primary unelevated')
-        return
 
     # ... The rest of the function is the same as the old render_step4
     current_form_data = cast(Dict[str, Any], user_storage[FORM_DATA_KEY])
@@ -559,14 +456,7 @@ def render_step5() -> None:
             _add_field("Đảng viên?", PARTY_MEMBERSHIP_KEY, Vl.validate_choice_made, input_type='select', options=["Chưa vào", "Đã vào"])
             if current_form_data.get(PARTY_MEMBERSHIP_KEY) == "Đã vào":
                 _add_field("Ngày kết nạp Đảng", PARTY_DATE_KEY, Vl.validate_date_required, input_type='date')
-
-    with ui.expansion("B. Dân tộc & Tôn giáo", icon='public').classes('w-full q-mb-md shadow-1 rounded-borders'):
-        with ui.column().classes('q-pa-md'):
-            ethnic_options: List[str] = getattr(para, 'ethnic_groups_vietnam', ETHNIC_OPTIONS_DEFAULT_FOR_INIT)
-            religion_options: List[str] = getattr(para, 'religion_options', RELIGION_OPTIONS_DEFAULT_FOR_INIT)
-            _add_field("Dân tộc", ETHNICITY_KEY, Vl.validate_choice_made, input_type='select', options=ethnic_options)
-            _add_field("Tôn giáo", RELIGION_KEY, Vl.validate_choice_made, input_type='select', options=religion_options)
-    
+        
     with ui.row().classes('w-full q-mt-lg justify-between items-center'):
         ui.button("← Quay lại", on_click=prev_step).props('flat color=grey')
         ui.button("Xác nhận & Tiếp tục →", on_click=lambda: _handle_step_confirmation(validators_for_step5, "Thông tin bổ sung hợp lệ!")).props('color=primary unelevated')
@@ -618,7 +508,7 @@ def render_step6() -> None:
             # ... (add loops for siblings and children here) ...
     
     # Section 5: Clearance Info (if applicable)
-    if user_storage.get(NEED_CLEARANCE_KEY, False):
+    if user_storage.get(NEEDS_CLEARANCE_KEY, False):
         with ui.card().classes('w-full q-mb-md shadow-2'):
             with ui.card_section().classes('bg-grey-2'): ui.label("V. Thông tin bổ sung").classes('text-subtitle1 text-weight-medium')
             ui.separator()
@@ -633,34 +523,360 @@ def render_step6() -> None:
     with ui.row().classes('w-full justify-start items-center'): 
         ui.button("← Quay lại & Chỉnh sửa", on_click=prev_step).props('flat color=grey')
 
+@ui.refreshable
+def render_step_start() -> None:
+    ui.label('Bắt đầu').classes('text-h6 q-mb-md')
+    ui.markdown('Chào mừng bạn đến với AutoLý! Để bắt đầu, hãy cho chúng tôi biết bạn đang chuẩn bị hồ sơ cho loại hình tổ chức nào nhé.')
+
+    options_step0: Dict[str, str] = {'Không': 'Không (Công ty tư nhân)', 'Có': 'Có (Cơ quan Nhà nước/Quân đội)'}
+    user_storage = cast(Dict[str, Any], app.storage.user)
+    form_data_s0: Dict[str, Any] = cast(Dict[str, Any], user_storage[FORM_DATA_KEY])
+    current_val_step0: str = cast(str, form_data_s0.get(STEP0_ANS_KEY, 'Không'))
+
+    ui.radio(options_step0, value=current_val_step0,
+             on_change=lambda e: form_data_s0.update({STEP0_ANS_KEY: e.value})) \
+        .props('inline')
+    
+    def _on_next_step0() -> None:
+        ans: Any = form_data_s0.get(STEP0_ANS_KEY)
+        user_storage[NEEDS_CLEARANCE_KEY] = (ans == 'Có')
+        next_step()
+
+    ui.button("Xác nhận & Tiếp tục →", on_click=_on_next_step0)\
+        .classes('q-mt-md').props('color=primary unelevated')
+
+@ui.refreshable
+def render_step_core_identity() -> None:
+    ui.label('Thông tin cá nhân').classes('text-h6 q-mb-sm')
+    ui.markdown('Tuyệt vời! Giờ hãy bắt đầu với một vài thông tin định danh cơ bản của bạn.')
+    
+    current_validators: List[ValidatorEntryType] = []
+    user_storage = cast(Dict[str, Any], app.storage.user)
+    current_step_errors: Dict[str, str] = user_storage.get(CURRENT_STEP_ERRORS_KEY, {})
+    form_attempted: bool = user_storage.get(FORM_ATTEMPTED_SUBMISSION_KEY, False)
+
+    def _add_field(label: str, key: str, val_func: ValidationFuncType, **kwargs: Any)-> Optional[Element]:
+        element, validator_entry = create_field(
+            label_text=label, storage_key=key, validation_func=val_func,
+            error_message_for_field=current_step_errors.get(key),
+            form_attempted=form_attempted, **kwargs)
+        current_validators.append(validator_entry)
+        return element
+    
+    _add_field('Họ và tên (IN HOA)', FULL_NAME_KEY, Vl.validate_full_name)
+    _add_field('Nam/Nữ', GENDER_KEY, Vl.validate_gender, 
+               input_type='select', options=['', 'Nam', 'Nữ'])
+    _add_field('Ngày sinh', DOB_KEY, Vl.validate_dob, input_type='date',
+                 date_min_max=(date(1900, 1, 1), date.today()))
+    _add_field('Nơi sinh', BIRTH_PLACE_KEY, Vl.validate_address)
+    
+    with ui.row().classes('w-full q-mt-lg justify-between items-center'):
+        ui.button("← Quay lại", on_click=prev_step).props('flat color=grey')
+        ui.button("Xác nhận & Tiếp tục →",
+                  on_click=lambda: _handle_step_confirmation(
+                      current_validators)).props('color=primary unelevated')
+    
+@ui.refreshable
+def render_step_official_id() -> None:
+    ui.label('Giấy tờ tuỳ thân').classes('text-h6 q-mb-sm')
+    ui.markdown('Tiếp theo, vui lòng cung cấp thông tin trên Căn cước công dân hoặc CMND của bạn.')
+
+    current_validators: List[ValidatorEntryType] = []
+    user_storage = cast(Dict[str, Any], app.storage.user)
+    current_step_errors: Dict[str, str] = user_storage.get(CURRENT_STEP_ERRORS_KEY, {})
+    form_attempted: bool = user_storage.get(FORM_ATTEMPTED_SUBMISSION_KEY, False)
+
+    def _add_field(label: str, key: str, val_func: ValidationFuncType, **kwargs: Any)-> Optional[Element]:
+        element, validator_entry = create_field(
+            label_text=label, storage_key=key, validation_func=val_func,
+            error_message_for_field=current_step_errors.get(key),
+            form_attempted=form_attempted, **kwargs)
+        current_validators.append(validator_entry)
+        return element
+    
+    _add_field('Số CMND/CCCD', ID_PASSPORT_NUM_KEY, Vl.validate_id_number)
+    _add_field('Cấp ngày', ID_PASSPORT_ISSUE_DATE_KEY, Vl.validate_id_issue_date,
+                input_type='date', date_min_max=(date(1900, 1, 1), date.today()))
+    _add_field('Nơi cấp', ID_PASSPORT_ISSUE_PLACE_KEY, Vl.validate_id_issue_place)
+
+    with ui.row().classes('w-full q-mt-lg justify-between items-center'):
+        ui.button("← Quay lại", on_click=prev_step).props('flat color=grey')
+        ui.button("Xác nhận & Tiếp tục →",
+                  on_click=lambda: _handle_step_confirmation(
+                      current_validators)).props('color=primary unelevated')
+
+@ui.refreshable
+def render_step_contact() -> None:
+    ui.label("Thông in liên lạc chính").classes('text-h6 q-mb-sm')
+    ui.markdown('Chúng tôi cần địa chỉ và số điện thoại để có thể liên lạc với bạn khi cần. \
+                Thông tin này sẽ được bảo mật.')
+
+    current_validators: List[ValidatorEntryType] = []
+    user_storage = cast(Dict[str, Any], app.storage.user)
+    current_step_errors: Dict[str, str] = user_storage.get(CURRENT_STEP_ERRORS_KEY, {})
+    form_attempted: bool = user_storage.get(FORM_ATTEMPTED_SUBMISSION_KEY, False)
+
+    def _add_field(label: str, key: str, val_func: ValidationFuncType, **kwargs: Any)-> Optional[Element]:
+        element, validator_entry = create_field(
+            label_text=label, storage_key=key, validation_func=val_func,
+            error_message_for_field=current_step_errors.get(key),
+            form_attempted=form_attempted, **kwargs)
+        current_validators.append(validator_entry)
+        return element
+    
+    _add_field('Địa chỉ hộ khẩu', REGISTERED_ADDRESS_KEY, Vl.validate_address)
+    _add_field('Số điện thoại', PHONE_KEY, Vl.validate_phone)
+
+    with ui.row().classes('w-full q-mt-lg justify-between items-center'):
+        ui.button("← Quay lại", on_click=prev_step).props('flat color=grey')
+        ui.button("Xác nhận & Tiếp tục →",
+                  on_click=lambda: _handle_step_confirmation(
+                      current_validators)).props('color=primary unelevated')
+
+@ui.refreshable
+def render_step_origin_info() -> None:
+    current_validators: List[ValidatorEntryType] = []
+    user_storage = cast(Dict[str, Any], app.storage.user)
+    current_step_errors: Dict[str, str] = user_storage.get(CURRENT_STEP_ERRORS_KEY, {})
+    form_attempted: bool = user_storage.get(FORM_ATTEMPTED_SUBMISSION_KEY, False)
+
+    def _add_field(label: str, key: str, val_func: ValidationFuncType, **kwargs: Any)-> Optional[Element]:
+        element, validator_entry = create_field(
+            label_text=label, storage_key=key, validation_func=val_func,
+            error_message_for_field=current_step_errors.get(key),
+            form_attempted=form_attempted, **kwargs)
+        current_validators.append(validator_entry)
+        return element
+    
+    _add_field("Dân tộc", ETHNICITY_KEY, Vl.validate_choice_made, input_type='select', 
+               options=para.ethnic_groups_vietnam)
+    _add_field("Tôn giáo", RELIGION_KEY, Vl.validate_choice_made, input_type='select', 
+               options=para.religion_options)
+
+    if user_storage.get(NEEDS_CLEARANCE_KEY, False):
+        _add_field('Nguyên quán (Nơi sinh của bố)', PLACE_OF_ORIGIN_KEY, Vl.validate_address)
+    
+    with ui.row().classes('w-full q-mt-lg justify-between items-center'):
+        ui.button("← Quay lại", on_click=prev_step).props('flat color=grey')
+        ui.button("Xác nhận & Tiếp tục →",
+                  on_click=lambda: _handle_step_confirmation(
+                      current_validators)).props('color=primary unelevated')
+
+@ui.refreshable
+def render_step_education() -> None:
+    current_validators: List[ValidatorEntryType] = []
+    user_storage = cast(Dict[str, Any], app.storage.user)
+    current_step_errors: Dict[str, str] = user_storage.get(CURRENT_STEP_ERRORS_KEY, {})
+    form_attempted: bool = user_storage.get(FORM_ATTEMPTED_SUBMISSION_KEY, False)
+
+    def _add_field(label: str, key: str, val_func: ValidationFuncType, **kwargs: Any)-> Optional[Element]:
+        element, validator_entry = create_field(
+            label_text=label, storage_key=key, validation_func=val_func,
+            error_message_for_field=current_step_errors.get(key),
+            form_attempted=form_attempted, **kwargs)
+        current_validators.append(validator_entry)
+        return element
+    
+    _add_field('Hoàn thành cấp 3 (12/12)', EDUCATION_HIGH_SCHOOL_KEY, Vl.validate_text_input_required)
+    _add_field('Bằng cấp cao nhất', EDUCATION_HIGHEST_KEY, Vl.validate_choice_made, 
+               input_type='select', options=para.degrees)
+    _add_field('Ngoại ngữ (VD: Tiếng Anh - IELTS 7.5)', )
+
+
+        with ui.row().classes('w-full q-gutter-md q-mb-md items-start'):
+        _, edu_validator_entry = create_field(
+            'Bằng cấp cao nhất', EDUCATION_HIGHEST_KEY, validate_degree_local,
+                     input_type='select', options=para_degrees_list, 
+                     error_message_for_field=current_step_errors.get(EDUCATION_HIGHEST_KEY),
+                     form_attempted=form_attempted
+        ) 
+        validators_for_step3.append(edu_validator_entry)
+        _, spec_validator_entry = create_field(
+            'Chuyên ngành đào tạo', EDUCATION_MAJOR_KEY, validate_not_empty_local,
+            error_message_for_field=current_step_errors.get(EDUCATION_MAJOR_KEY), 
+            form_attempted=form_attempted
+        )
+
+@ui.refreshable
+def render_step_work_history() -> None:
+    pass
+
+@ui.refreshable
+def render_step_awards() -> None:
+    pass
+
+@ui.refreshable
+def render_step_parents_basic() -> None:
+    pass
+
+@ui.refreshable
+def render_step_siblings() -> None:
+    pass
+
+@ui.refreshable
+def render_step_spouse_and_children() -> None:
+    pass
+
+@ui.refreshable
+def render_step_gov_political_class() -> None:
+    pass
+
+@ui.refreshable
+def render_step_gov_affiliation() -> None:
+    pass
+
+@ui.refreshable
+def render_step_gov_parents_history() -> None:
+    pass
+
+@ui.refreshable
+def render_step_health_and_military() -> None:
+    ui.label("Sức khỏe chung").classes('text-subtitle1 q-mb-xs')
+    current_validators: List[ValidatorEntryType] = []
+    user_storage = cast(Dict[str, Any], app.storage.user)
+    current_step_errors: Dict[str, str] = user_storage.get(CURRENT_STEP_ERRORS_KEY, {})
+    form_attempted: bool = user_storage.get(FORM_ATTEMPTED_SUBMISSION_KEY, False)
+
+    def _add_field(label: str, key: str, val_func: ValidationFuncType, **kwargs: Any)-> Optional[Element]:
+        element, validator_entry = create_field(
+            label_text=label, storage_key=key, validation_func=val_func,
+            error_message_for_field=current_step_errors.get(key),
+            form_attempted=form_attempted, **kwargs)
+        current_validators.append(validator_entry)
+        return element
+    
+    _add_field('Tình trạng sức khoẻ (Tốt)', HEALTH_KEY, Vl.validate_text_input_required) # Assuming a simple text validator
+    _add_field('Chiều cao (cm)', HEIGHT_KEY, Vl.validate_text_input_required)
+    _add_field('Cân nặng (kg)', WEIGHT_KEY, Vl.validate_text_input_required)
+    
+    with ui.row().classes('w-full q-mt-lg justify-between items-center'):
+        ui.button("← Quay lại", on_click=prev_step).props('flat color=grey')
+        ui.button("Xác nhận & Tiếp tục →",
+                  on_click=lambda: _handle_step_confirmation(
+                      current_validators)).props('color=primary unelevated')
+
+@ui.refreshable
+def render_step_emergency_contact() -> None:
+    pass
+
+@ui.refreshable
+def render_step_review() -> None:
+    pass
+# ===================================================================
+# 4. DEFINE THE BLUEPRINT
+# ++ NEW "ROBO-TAX" APPLICATION FLOW BLUEPRINT ++
+# ===================================================================
+class StepDefinition(TypedDict):
+    id: int
+    name: str
+    render_func: Callable[[], None]
+    needs_clearance: Optional[bool]
+
+STEPS_DEFINITION: List[StepDefinition] = [
+    # --- Onboarding ---
+    {'id': 0, 'name': 'start', 'render_func': render_step_start, 'needs_clearance': None},
+
+    # --- Core Identity & Contact ---
+    {'id': 1, 'name': 'core_identity', 'render_func': render_step_core_identity, 'needs_clearance': None},
+    {'id': 2, 'name': 'official_id', 'render_func': render_step_official_id, 'needs_clearance': None},
+    {'id': 3, 'name': 'contact', 'render_func': render_step_contact, 'needs_clearance': None},
+    {'id': 4, 'name': 'origin_info', 'render_func': render_step_origin_info, 'needs_clearance': None},
+
+    # --- Professional Background ---
+    {'id': 5, 'name': 'education', 'render_func': render_step_education, 'needs_clearance': None},
+    {'id': 6, 'name': 'work_history', 'render_func': render_step_work_history, 'needs_clearance': None},
+    {'id': 7, 'name': 'awards', 'render_func': render_step_awards, 'needs_clearance': None},
+    
+    # --- Family Background (Universal) ---
+    {'id': 8, 'name': 'parents_basic', 'render_func': render_step_parents_basic, 'needs_clearance': None},
+    {'id': 9, 'name': 'siblings', 'render_func': render_step_siblings, 'needs_clearance': None},
+    {'id': 10, 'name': 'spouse_and_children', 'render_func': render_step_spouse_and_children, 'needs_clearance': None},
+
+    # --- GOVERNMENT/MILITARY CLEARANCE SECTION (SKIPPED FOR PRIVATE) ---
+    {'id': 11, 'name': 'gov_political_class', 'render_func': render_step_gov_political_class, 'needs_clearance': True},
+    {'id': 12, 'name': 'gov_affiliation', 'render_func': render_step_gov_affiliation, 'needs_clearance': True},
+    {'id': 13, 'name': 'gov_parents_history', 'render_func': render_step_gov_parents_history, 'needs_clearance': True},
+    
+    # --- Miscellaneous & Finalization ---
+    {'id': 14, 'name': 'health_and_military', 'render_func': render_step_health_and_military, 'needs_clearance': None},
+    {'id': 15, 'name': 'emergency_contact', 'render_func': render_step_emergency_contact, 'needs_clearance': None},
+    {'id': 16, 'name': 'review', 'render_func': render_step_review, 'needs_clearance': None},
+]
+
+# --- Navigation Functions ---
+
+def _get_current_step_index(current_step_id: int) -> int:
+    """Finds the list index for a given step ID from the blueprint."""
+    for i, step_def in enumerate(STEPS_DEFINITION):
+        if step_def['id'] == current_step_id:
+            return i
+    return -1 # Should not happen in a normal flow
+
+
+def next_step() -> None:
+    user_storage = cast(Dict[str, Any], app.storage.user)
+    current_step_id: int = cast(int, user_storage.get(STEP_KEY, 0))
+    current_index = _get_current_step_index(current_step_id)
+    needs_clearance_val: bool = cast(bool, user_storage.get(NEEDS_CLEARANCE_KEY, False))
+
+    # Iterate forward from the current position to find the next valid step
+    for i in range(current_index + 1, len(STEPS_DEFINITION)):
+        next_step_candidate = STEPS_DEFINITION[i]
+        if next_step_candidate[NEEDS_CLEARANCE_KEY] and not needs_clearance_val:
+            continue # Skip and check next step
+        user_storage[STEP_KEY] = next_step_candidate['id']
+        user_storage[FORM_ATTEMPTED_SUBMISSION_KEY] = False
+        user_storage[CURRENT_STEP_ERRORS_KEY] = {}
+        update_step_content.refresh()
+        return
+
+def prev_step() -> None:
+    user_storage = cast(Dict[str, Any], app.storage.user)
+    current_step_id: int = cast(int, user_storage.get(STEP_KEY, 0))
+    current_index = _get_current_step_index(current_step_id)
+    needs_clearance_val: bool = cast(bool, user_storage.get(NEEDS_CLEARANCE_KEY, False))
+
+    for i in range(current_index - 1, -1, -1):
+        prev_step_candidate = STEPS_DEFINITION[i]
+        if prev_step_candidate[NEEDS_CLEARANCE_KEY] and not needs_clearance_val:
+            continue
+        user_storage[STEP_KEY] = prev_step_candidate['id']
+        user_storage[FORM_ATTEMPTED_SUBMISSION_KEY] = False
+        user_storage[CURRENT_STEP_ERRORS_KEY] = {}
+        update_step_content.refresh()
+        return
+
+# ===================================================================
+# 5. DEFINE THE NAVIGATION ENGINE & UI CONTROLLER
+# These functions USE the blueprint, so they must come after it.
+# ===================================================================
 
 # --- update_step_content, main_page, ui.run() ---
 @ui.refreshable
 def update_step_content() -> None:
     user_storage = cast(Dict[str, Any], app.storage.user)
-    current_step_val: int = user_storage.get(STEP_KEY, 0)
+    current_step_id: int = user_storage.get(STEP_KEY, 0)
+    # Find the correct step definition from the blueprint
+    step_to_render = next((step for step in STEPS_DEFINITION if step['id']==current_step_id), None)
     
-    if current_step_val == 0: render_step0()
-    elif current_step_val == 1: render_step1()
-    elif current_step_val == 2: render_step2()
-    elif current_step_val == 3: render_step3()
-    elif current_step_val == 4: render_step4()
-    elif current_step_val == 5: render_step5()
-    elif current_step_val == 6: render_step6()
+    if step_to_render:
+        step_to_render['render_func']()
     else:
-        ui.label(f"Lỗi: Bước không xác định ({current_step_val})").classes('text-negative text-h6')
+        ui.label(f"Lỗi: Bước không xác định ({current_step_id})").classes('text-negative text-h6')
         def reset_app_fully() -> None:
             user_storage[STEP_KEY] = 0
             new_form_data_reset: Dict[str, Any] = {}
             initialize_form_data(new_form_data_reset)
             user_storage[FORM_DATA_KEY] = new_form_data_reset
             user_storage[FORM_ATTEMPTED_SUBMISSION_KEY] = False
-            user_storage[NEED_CLEARANCE_KEY] = False
+            user_storage[NEEDS_CLEARANCE_KEY] = False
             user_storage[CURRENT_STEP_ERRORS_KEY] = {} # Reset errors
-
             update_step_content.refresh()
         ui.button("Bắt đầu lại", on_click=reset_app_fully).props('color=primary unelevated')
 
+# ===================================================================
+# 6. MAIN PAGE AND APP STARTUP
+# ===================================================================
 @ui.page('/')
 def main_page() -> None:
     user_storage = cast(Dict[str, Any], app.storage.user)
@@ -673,7 +889,7 @@ def main_page() -> None:
         user_storage[FORM_DATA_KEY] = initial_form_data
         
         user_storage[FORM_ATTEMPTED_SUBMISSION_KEY] = False
-        user_storage[NEED_CLEARANCE_KEY] = False
+        user_storage[NEEDS_CLEARANCE_KEY] = False
         user_storage[CURRENT_STEP_ERRORS_KEY] = {} # Initialize error store
 
     ui.query('body').style('background-color: #f0f2f5;')
