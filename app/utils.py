@@ -138,7 +138,6 @@ PDF_SPOUSE_JOB_KEY: str = 'spouse_job'
 
 PDF_CHILD_NAME_KEY: str = 'child_name_' # Note the trailing underscore
 PDF_CHILD_AGE_KEY: str = 'child_age_' # Note the trailing underscore
-PDF_CHILD_JOB_KEY: str = 'child_job_' # Note the trailing underscore
 
 PDF_WORK_FROM_TO_KEY: str = 'work_from_to_'
 PDF_WORK_TASK_KEY: str = 'work_task_'
@@ -149,7 +148,7 @@ PDF_WORK_ROLE_KEY: str = 'work_role_'
 ETHNIC_OPTIONS_DEFAULT_FOR_INIT: List[str] = ["Kinh", "Tày", "Thái", "Mường", "Khác"]
 RELIGION_OPTIONS_DEFAULT_FOR_INIT: List[str] = ["Không", "Phật giáo", "Công giáo", "Khác"]
 
-PDF_TEMPLATE_PATH: str = "assets/Mau-so-yeu-ly-lich-TEMPLATE.pdf" # Ensure this path is correct
+PDF_TEMPLATE_PATH: str = "assets/TEMPLATE-Arial.pdf" # Ensure this path is correct
 PDF_FILENAME: str = "SoYeuLyLich_DaDien.pdf"
 
 # --- Global Helper Function: create_field ---
@@ -486,12 +485,11 @@ def generate_pdf_data_mapping(
     Transforms data from the application's format into a dictionary
     where keys are the PDF form field names.
     """
-    from copy import copy
     data_for_pdf: Dict[str, Any] = {}
     # --- Section 1: Basic Information & Health ---
     full_name_val: str = form_data_app.get(FULL_NAME_KEY, '')
-    data_for_pdf[PDF_FULL_NAME_P1_KEY] = copy(full_name_val)
-    data_for_pdf[PDF_FULL_NAME_P2_KEY] = copy(full_name_val)
+    data_for_pdf[PDF_FULL_NAME_P1_KEY] = full_name_val
+    data_for_pdf[PDF_FULL_NAME_P2_KEY] = full_name_val
     
     data_for_pdf[PDF_GENDER_KEY] = form_data_app.get(GENDER_KEY, '')
     data_for_pdf[PDF_ID_NUM_KEY] = form_data_app.get(ID_PASSPORT_NUM_KEY, '')
@@ -583,10 +581,8 @@ def generate_pdf_data_mapping(
             entry = children_list[i]
             data_for_pdf[f'{PDF_CHILD_NAME_KEY}{pdf_idx}'] = entry.get('name', '')
             data_for_pdf[f'{PDF_CHILD_AGE_KEY}{pdf_idx}'] = entry.get('age', '')
-            data_for_pdf[f'{PDF_CHILD_JOB_KEY}{pdf_idx}'] = entry.get('job', '')
         else:
             data_for_pdf[f'{PDF_CHILD_NAME_KEY}{pdf_idx}'] = ""
             data_for_pdf[f'{PDF_CHILD_AGE_KEY}{pdf_idx}'] = ""
-            data_for_pdf[f'{PDF_CHILD_JOB_KEY}{pdf_idx}'] = ""
             
     return data_for_pdf
