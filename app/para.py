@@ -18,12 +18,29 @@ degrees: List[str] = [
     "Văn bằng 2"
 ]
 
-training_format: List[str] = [
+education_format: List[str] = [
     "Chính quy",
     "Tại chức",
     "Từ xa",
     "Liên thông"
 ]
+
+education_high_school: List[str] = [
+    '12/12',
+    '11/12',
+    '10/12',
+    '9/12',
+    '8/12',
+    '7/12',
+    '6/12',
+    '5/12',
+    '4/12',
+    '3/12',
+    '2/12',
+    '1/12',
+    '0/12',
+]
+
 
 ethnic_groups_vietnam: List[str] = [
     "Kinh",
@@ -83,7 +100,7 @@ ethnic_groups_vietnam: List[str] = [
     "Không rõ (Unknown)"
 ]
 
-religion_options: List[str] = [
+religion: List[str] = [
     "Không",                   # No religion
     "Phật giáo",               # Buddhism
     "Công giáo",               # Catholicism (Roman Catholic)
@@ -106,7 +123,41 @@ religion_options: List[str] = [
     "Khác (Other – Ghi rõ)"    # Other – Please specify
 ]
 
-politics_options: List[str] = [
+social_standing: List[str] = [
+    "Công chức",          # state civil servant
+    "Viên chức",          # public-service employee
+    "Công nhân",          # industrial/blue-collar worker
+    "Nông dân",           # farmer
+    "Bộ đội",             # army personnel
+    "Công an",            # police/公安
+    "Nhân viên",          # salaried staff / office worker
+    "Chủ doanh nghiệp",   # business owner
+    "Tiểu thương",        # small retailer / trader
+    "Thợ thủ công",       # artisan / craft worker
+    "Học sinh",           # pupil
+    "Sinh viên",          # student
+    "Lao động tự do",     # freelance / gig worker
+    "Chưa có việc làm",   # currently unemployed
+]
+
+family_standing: List[str] = [
+    "Nông dân",        # generic farmer (covers đa số rural households)
+    "Trung nông",      # middle-income farmer
+    "Bần nông",        # poor peasant
+    "Cố nông",         # landless peasant
+    "Phú nông",        # rich farmer
+    "Địa chủ",         # (historic) landlord
+    "Công nhân",       # worker family
+    "Công chức",       # civil-servant family
+    "Viên chức",       # public-service family
+    "Dân nghèo",       # low-income labourer family
+    "Tiểu thương",     # small-trade family
+    "Tiểu chủ",        # small proprietor
+    "Tiểu tư sản",     # petty bourgeois
+    "Tư sản",          # capitalist / entrepreneur family
+]
+
+politics: List[str] = [
     "Chưa học",
     "Sơ cấp",
     "Trung cấp",
@@ -114,7 +165,7 @@ politics_options: List[str] = [
     "Cử nhân"
 ]
 
-work_position_options: List[str] = [
+work_position: List[str] = [
     "Thực tập",            # Intern
     "Nhân viên",           # Staff/Employee
     "Tổ trưởng",           # Team Leader
@@ -136,7 +187,7 @@ work_position_options: List[str] = [
     "Khác (Other – Ghi rõ)"
 ]
 
-awards_titles_options: List[str] = [                           
+awards_titles: List[str] = [                           
     "Chưa có",                    # None / Not yet
     "Cử nhân",                    # Bachelor
     "Kỹ sư",                      # Engineer

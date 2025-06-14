@@ -1,18 +1,194 @@
 # utils.py
+from __future__ import annotations
 from nicegui import ui, app # ui, app not directly used here, but often kept for consistency
 from nicegui.element import Element # Not used here, consider removing if not needed by other utils
-from nicegui.events import ValueChangeEventArguments # Not used here
+from nicegui.events import GenericEventArguments # Not used here
 from datetime import datetime, date
 from typing import Any, Callable, Dict, List, Optional, Union, Tuple, TypeAlias, cast
+from dataclasses import dataclass
 import para # Assuming para.py exists and might be used for defaults
 
 # --- Type Aliases ---
 ValidationFuncType: TypeAlias = Callable[[Any], Tuple[bool, str]]
-ValidationArgsFuncType: TypeAlias = Callable[[Dict[str, Any], str], Any]
-ValidatorEntryType: TypeAlias = Tuple[str, ValidationFuncType, ValidationArgsFuncType, str]
+
+# --- ARCHITECTURAL CORE: SINGLE SOURCE OF TRUTH ---
+@dataclass(frozen=True)
+class FormField:
+    """Defines everything about a form field in one place."""
+    key: str
+    label: str
+    ui_type: str = 'text'
+    # pdf_map can be a single key, a list for repeated values, or a prefix for indexed lists.
+    pdf_map: Optional[Union[str, List[str]]] = None
+    options: Optional[Union[List[str], Dict[str, str]]] = None
+    split_date: bool = True
+    date_min_max: Optional[Tuple[Optional[date], Optional[date]]] = None
+    select_display_key: Optional[str] = None
+    select_value_key: Optional[str] = None
+    default_value: Any = ''
+
+# --- APPLICATION SCHEMA DEFINITION ---
+# This class is now the *only* place you need to define fields.
+# Add, remove, or change fields here, and the app adapts.
+class AppSchema:
+    """
+    The single source of truth for the entire application form.
+    Defines all fields, their properties, and their mapping to the PDF.
+    """
+    # Step 1
+    STEP0_ANS = FormField(key='step0_ans', label='Nộp cho cơ quan Nhà nước/Quân đội', ui_type='radio', options={'Không': 'Không', 'Có': 'Có'}, default_value='Không')
+
+    # Step 2 (Personal Info)
+    FULL_NAME = FormField(key='full_name', label='HỌ VÀ TÊN (viết hoa)', pdf_map=['full_name_p1', 'full_name_p2'])
+    GENDER = FormField(key='gender', label='Giới tính', ui_type='radio', options=['Nam', 'Nữ'], pdf_map='gender', default_value='Nam')
+    DOB = FormField(key='dob', label='Ngày sinh', ui_type='date', pdf_map=['dob_day_p1', 'dob_month_p1', 'dob_year_p1'], 
+                    default_value=None, date_min_max=(date(1900, 1, 1), date.today()))
+    BIRTH_PLACE = FormField(key='birth_place', label='Nơi sinh', pdf_map='birth_place')
+
+    # Step 3 (Official id)
+    ID_PASSPORT_NUM = FormField(key='id_passport_num', label='Số CMND/CCCD', pdf_map='id_number')
+    ID_PASSPORT_ISSUE_DATE = FormField(key='id_passport_issue_date', label='Ngày cấp', ui_type='date', pdf_map=['id_issue_day', 'id_issue_month', 'id_issue_year'], 
+                                       default_value=None, date_min_max=(date(1900, 1, 1), date.today()))
+    ID_PASSPORT_ISSUE_PLACE = FormField(key='id_passport_issue_place', label='Nơi cấp', pdf_map='id_issue_place')
+
+    # Step 4 (contact)
+    REGISTERED_ADDRESS = FormField(key='registered_address', label='Địa chỉ hộ khẩu', pdf_map=['registered_address_p1', 'registered_address_p2'], default_value='')
+    PHONE = FormField(key='phone', label='Số điện thoại', pdf_map='phone', default_value='')
+
+    # Step 5 (origin_info)
+    ETHNICITY = FormField(
+        key='ethnicity', label='Dân tộc', ui_type='select',
+        options=getattr(para, 'ethnic_groups_vietnam', ['Kinh']),
+        pdf_map='ethnicity',
+        default_value=getattr(para, 'ethnic_groups_vietnam', ['Không'])[0]
+        )
+    RELIGION = FormField(
+        key='religion', label='Tôn giáo', ui_type='select',
+        options=getattr(para, 'religions', ['Không']),
+        pdf_map='religion',
+        default_value=getattr(para, 'religion', ['Không'])[0]
+        ) 
+    PLACE_OF_ORIGIN = FormField(key='place_of_origin', label='Nguyên quán (quê của bố)', pdf_map='place_of_origin', default_value='')
+
+    # Step 6 (education)
+    FOREIGN_LANGUAGE = FormField(key='foreign_language', label='Ngoại ngữ', pdf_map='foreign_language', default_value='')
+    EDUCATION_HIGH_SCHOOL = FormField(key='education_high_school', label='Lộ trình hoàn thành cấp ba', ui_type='select',
+                                      options=getattr(para, 'education_high_school', ['12/12']),
+                                      pdf_map='education_high_school', 
+                                      default_value=getattr(para, 'education_high_school', ['12/12'])[0]
+                                      )
+    EDUCATION_HIGHEST = FormField(key='education_highest', label='Bằng cấp cao nhất', ui_type='select',
+                                  options=getattr(para, 'degrees', ["Không có"]),
+                                  pdf_map='education_highest', 
+                                  default_value=getattr(para, 'degrees', ["Không có"])[0]
+                                  )
+    EDUCATION_MAJOR = FormField(key='education_major', label='Chuyên ngành đào tạo', pdf_map='education_major', default_value='')
+    EDUCATION_FORMAT = FormField(key='education_format', label='Loại hình đào tạo', ui_type='select',
+                                 options=getattr(para, 'education_format', ['Chính quy']),
+                                 pdf_map='education_major', 
+                                 default_value=getattr(para, 'education_format', ['Chính quy'])[0]
+                                 )
+
+    # Step 8 (award)
+    AWARD = FormField(key='award', label='Khen thưởng', ui_type='select',
+                      options=getattr(para, 'awards_titles', ['Chưa có']),
+                      pdf_map='education_major', 
+                      default_value=getattr(para, 'awards_titles', ['Chưa có'])[0]
+                      )
+    DISCIPLINE = FormField(key='discipline', label='Kỷ luật', pdf_map='education_major', default_value='Không có')
+
+    # Step 9 (basic parents info)
+    DAD_NAME = FormField(key='dad_name', label='Họ tên Bố', pdf_map='dad_name', default_value='')
+    DAD_AGE = FormField(key='dad_age', label='Tuổi Bố', pdf_map='dad_age', default_value='')
+    DAD_JOB = FormField(key='dad_job', label='Nghề nghiệp Bố', pdf_map='dad_job', default_value='')
+
+    MOM_NAME = FormField(key='mom_name', label='Họ tên Mẹ', pdf_map='mom_name', default_value='')
+    MOM_AGE = FormField(key='mom_age', label='Tuổi Mẹ', pdf_map='mom_age', default_value='')
+    MOM_JOB = FormField(key='mom_job', label='Nghề nghiệp Mẹ', pdf_map='mom_job', default_value='')
+
+
+    # Step 11 (spouse and kids)
+    SPOUSE_NAME = FormField(key='spouse_name', label='Họ tên Vợ/Chồng', pdf_map='spouse_name', default_value='')
+    SPOUSE_AGE = FormField(key='spouse_age', label='Tuổi Vợ/Chồng', pdf_map='spouse_age', default_value='')
+    SPOUSE_JOB = FormField(key='spouse_job', label='Nghề nghiệp Vợ/Chồng', pdf_map='mom_job', default_value='')
+
+    CHILD_NAME = FormField(key='child_name', label='Họ tên con', pdf_map='child_name', default_value='')
+    CHILD_AGE = FormField(key='child_age', label='Tuổi con', pdf_map='child_age', default_value='')
+    CHILD_JOB = FormField(key='child_job', label='Nghề nghiệp con', pdf_map='child_job', default_value='')
+
+    # Step 12 conditional (social standing)
+    SOCIAL_STANDING = FormField(key='social_standing', label='Thành phần bản thân hiện nay', ui_type='select',
+                                options=getattr(para, 'social_standing', ['Không rõ']),
+                                pdf_map='social_standing',
+                                default_value=getattr(para, 'social_standing', ['Không rõ'])[0]                
+                                )
+    FAMILY_STANDING = FormField(key='family_standing', label='Thành phần gia đình sau cải cách ruộng đất', ui_type='select',
+                                options=getattr(para, 'family_standing', ['Không rõ']),
+                                pdf_map='family_standing',
+                                default_value=getattr(para, 'family_standing', ['Không rõ'])[0]
+                                )
+    
+    # --- Step 13: Government Affiliation ---
+    YOUTH_DATE = FormField(key='youth_date', label='Ngày kết nạp Đoàn', ui_type='date', 
+                           pdf_map=['youth_adm_day', 'youth_adm_month', 'youth_adm_year'], 
+                           default_value=None, date_min_max=(date(1900, 1, 1), date.today()),
+                            )
+    PARTY_DATE = FormField(key='party_date', label='Ngày kết nạp Đảng', ui_type='date', 
+                           pdf_map=['party_adm_day', 'party_adm_month', 'party_adm_year'], 
+                           default_value=None, date_min_max=(date(1900, 1, 1), date.today()),
+                           )
+    CURRENT_SALARY = FormField(key='current_salary', label='Mức lương hiện tại', 
+                               pdf_map='current_salary', default_value='')
+
+    # --- Step 14: Parent History ---
+    DAD_PRE_AUGUST_REVOLUTION = FormField(key='dad_pre_august_revolution', label='Trước CM tháng 8 làm gì? Ở đâu?', default_value='Không rõ')
+    DAD_DURING_FRENCH_WAR = FormField(key='dad_during_french_war', label='Trong kháng chiến chống Pháp làm gì? \
+                                      Ở đâu?', default_value='Không rõ')
+    DAD_FROM_1955_PRESENT = FormField(key='dad_from_1955_present', label='Từ 1955 đến nay làm gì? Ở đâu? \
+                                    (Ghi rõ tên cơ quan, xí nghiệp hiện nay đang làm)', ui_type='textarea') # Use textarea
+
+    MOM_PRE_AUGUST_REVOLUTION = FormField(key='mom_pre_august_revolution', label='Trước CM tháng 8 làm gì? Ở đâu?', default_value='Không rõ')
+    MOM_DURING_FRENCH_WAR = FormField(key='mom_during_french_war', label='Trong kháng chiến chống Pháp làm gì? \
+                                    Ở đâu?', default_value='Không rõ')
+    MOM_FROM_1955_PRESENT = FormField(key='mom_from_1955_present', label='Từ 1955 đến nay làm gì? Ở đâu? \
+                                    (Ghi rõ tên cơ quan, xí nghiệp hiện nay đang làm)', ui_type='textarea') # Use textarea
+
+    # --- Step 15: Health/Military ---
+    HEALTH = FormField(key='health', label='Tình trạng sức khỏe', pdf_map='health')
+    HEIGHT = FormField(key='height', label='Chiều cao (cm)', pdf_map='height')
+    WEIGHT = FormField(key='weight', label='Cân nặng (kg)', pdf_map='weight')
+    JOIN_ARMY_DATE = FormField(key='join_army_date', label='Ngày nhập ngũ', ui_type='date',
+                               pdf_map='join_army_date', default_value=None,
+                               date_min_max=(date(1900, 1, 1), date.today()), split_date=False)
+    LEAVE_ARMY_DATE = FormField(key='leave_army_date', label='Ngày xuất ngũ', ui_type='date',
+                                pdf_map='leave_army_date', default_value=None,
+                                date_min_max=(date(1900, 1, 1), date.today()), split_date=False)
+
+    # --- Step 16: Emergency Contact ---
+    EMERGENCY_CONTACT_DETAILS = FormField(key='emergency_contact', label='Khi cần báo tin cho', 
+                                          pdf_map='emergency_contact_details', default_value='')
+    
+    EMERGENCY_CONTACT_PLACE = FormField(key='emergency_place', label='Địa chỉ báo tin', 
+                                        pdf_map='emergency_contact_address')
+    SAME_ADDRESS_AS_REGISTERED = FormField(key='same_address1', label='Nơi báo tin giống địa chỉ hộ khẩu',\
+                                           ui_type='checkbox', default_value=False)
+    
+
+    # --- DATAFRAME KEYS (for AgGrid-like structures) ---
+    # These keys hold list[dict] data
+    WORK_DATAFRAME = FormField(key='work_dataframe', label='Lịch sử làm việc')
+    SIBLING_DATAFRAME = FormField(key='sibling_dataframe', label='Thông tin anh chị em')
+    CHILD_DATAFRAME = FormField(key='child_dataframe', label='Thông tin con cái')
+
+    @classmethod
+    def get_all_fields(cls) -> List[FormField]:
+        return [
+            field for field in cls.__dict__.values()
+            if isinstance(field, FormField)
+        ]
 
 # --- CENTRALIZED CONSTANTS ---
-DATE_FORMAT_NICEGUI: str = '%Y-%m-%d'
+DATE_FORMAT_STORAGE: str = '%Y-%m-%d'
 DATE_FORMAT_DISPLAY: str = '%d/%m/%Y'
 
 # Keys for app.storage.user
@@ -21,681 +197,275 @@ FORM_DATA_KEY: str = 'form_data'
 NEEDS_CLEARANCE_KEY: str = 'needs_clearance'
 FORM_ATTEMPTED_SUBMISSION_KEY: str = 'form_attempted_submission'
 CURRENT_STEP_ERRORS_KEY: str = 'current_step_errors'
-# A robust way to define your application's structure
-
-# --- Form Data Keys (used within FORM_DATA_KEY dict) ---
-# Step 1
-STEP0_ANS_KEY: str = 'step0_ans'
-
-# Step 2 (Personal Info)
-FULL_NAME_KEY: str = 'full_name'
-GENDER_KEY: str = 'gender'
-DOB_KEY: str = 'dob' 
-BIRTH_PLACE_KEY: str = 'birth_place'
-
-# Step 3 (Official id)
-ID_PASSPORT_NUM_KEY: str = 'id_passport_num'
-ID_PASSPORT_ISSUE_DATE_KEY: str = 'id_passport_issue_date'
-ID_PASSPORT_ISSUE_PLACE_KEY: str = 'id_passport_issue_place'
-
-# Step 4 (contact)
-REGISTERED_ADDRESS_KEY: str = 'registered_address'
-PHONE_KEY: str = 'phone'
-
-# Step 5 (origin_info)
-ETHNICITY_KEY: str = 'ethnicity' 
-RELIGION_KEY: str = 'religion'  
-PLACE_OF_ORIGIN_KEY: str = 'place_of_origin'
-
-# Step 6 (education)
-FOREIGN_LANGUAGE: str = 'foreign_language'
-EDUCATION_HIGH_SCHOOL_KEY: str = 'cultural_level'
-EDUCATION_HIGHEST_KEY: str = 'highest_education'
-EDUCATION_MAJOR_KEY: str = 'specialized_area'
-EDUCATION_FORMAT_KEY: str = 'education_format'
-
-# Step 7 (work history)
-WORK_DATAFRAME_KEY: str = 'work_dataframe'
-WORK_FROM_DATE_KEY: str = "work_from"
-WORK_TO_DATE_KEY: str = "work_to"
-WORK_TASK_KEY: str = "work_task" 
-WORK_UNIT_KEY: str = "work_unit"
-WORK_ROLE_KEY: str = "work_work"
-
-# Step 8 (award)
-AWARD_KEY: str = 'award'
-DISCIPLINE_KEY: str = 'discipline'
-
-# Step 9 (basic parents info)
-DAD_NAME_KEY: str = 'dad_name'
-DAD_AGE_KEY: str = 'dad_age'
-DAD_JOB_KEY: str = 'dad_job'
-
-MOM_NAME_KEY: str = 'mom_name'
-MOM_AGE_KEY: str = 'mom_age'
-MOM_JOB_KEY: str = 'mom_job'
-
-# Step 10 (sibling info)
-SIBLING_DATAFRAME_KEY: str = 'sibling_dataframe'
-SIBLING_NAME_KEY: str = 'sibling_name'
-SIBLING_AGE_KEY: str = 'sibling_dob'
-SIBLING_POLITICAL_LEVEL_KEY: str = 'sibling_political_level'
-# Step 11 (spouse and kids)
-SPOUSE_NAME_KEY: str = 'spouse_name'
-SPOUSE_AGE_KEY: str = 'spouse_age'
-SPOUSE_JOB_KEY: str = 'spouse_job'
-
-CHILD_DATAFRAME_KEY: str = 'child_dataframe'
-CHILD_NAME_KEY: str = 'child_name'
-CHILD_AGE_KEY: str = 'child_age'
-CHILD_JOB_KEY: str = 'child_job'
-
-# Step 12 conditional (social standing)
-SOCIAL_STANDING_KEY: str = 'social_standing'
-FAMILY_STANDING_KEY: str = 'family_standing'
-
-# Step 13 conditional (gov affiliation)
-YOUTH_DATE_KEY: str = 'youth_date'
-PARTY_DATE_KEY: str = 'party_date'
-
-# Step 14 conditional (parent history)
-PRE_AUGUST_REVOLUTION_KEY: str = 'pre_august_revolution'
-DURING_FRENCH_WAR_KEY: str = 'during_french_war'
-FROM_1955_PRESENT_KEY: str = 'from_1955_present'
-
-# Step 15 (health for military)
-HEALTH_KEY: str = 'health'
-HEIGHT_KEY: str = 'height'
-WEIGHT_KEY: str = 'weight'
-JOIN_ARMY_DATE_KEY: str = 'join_army_date'
-LEAVE_ARMY_DATE_KEY: str = 'leave_army_date'
-
-# Step 16 (emergency contact)
-EMERGENCY_CONTACT_DETAILS_KEY: str = 'emergency_contact'
-EMERGENCY_CONTACT_PLACE_KEY: str = 'emergency_place'
-
-# --- PDF Field Name Constants (for data_for_pdf keys) ---
-## MENTOR NOTE: Using your new, cleaner key structure without the '_pdf' suffix and with P1/P2 for duplicates.
-
-# Step 2 (Personal Info)
-PDF_FULL_NAME_P1_KEY: str = 'full_name_p1' 
-PDF_FULL_NAME_P2_KEY: str = 'full_name_p2' 
-PDF_GENDER_KEY: str = 'gender'
-
-PDF_DOB_DAY_P1_KEY:str = 'dob_day_p1'
-PDF_DOB_MONTH_P1_KEY: str = 'dob_month_p1'
-PDF_DOB_YEAR_P1_KEY:str = 'dob_year_p1'
-
-PDF_DOB_DAY_P2_KEY:str = 'dob_day_p2'
-PDF_DOB_MONTH_P2_KEY: str = 'dob_month_p2'
-PDF_DOB_YEAR_P2_KEY:str = 'dob_year_p2'
-
-# Step 3 (Official id)
-PDF_ID_NUM_KEY: str = 'id_number'
-PDF_ID_ISSUE_DAY_KEY: str = 'id_issue_day'
-PDF_ID_ISSUE_MONTH_KEY: str = 'id_issue_month'
-PDF_ID_ISSUE_YEAR_KEY: str = 'id_issue_year'
-PDF_ID_ISSUE_PLACE_KEY: str = 'id_issue_place'
-
-# Step 4 (contact)
-PDF_REGISTERED_ADDRESS_P1_KEY: str = 'registered_address_p1'
-PDF_REGISTERED_ADDRESS_P2_KEY: str = 'registered_address_p2'
-PDF_PHONE_MOBILE_KEY: str = 'phone_mobile'
-
-# Step 5 (origin_info)
-PDF_ETHNICITY_KEY: str = 'ethnicity'
-PDF_RELIGION_KEY: str = 'religion'
-PDF_PLACE_OF_ORIGIN_KEY: str = 'place_of_origin'
-
-# Step 6 (education)
-PDF_FOREIGN_LANGUAGE: str = 'foreign_language'
-PDF_EDUCATION_HIGH_SCHOOL_KEY: str = 'cultural_level'
-PDF_EDUCATION_HIGHEST_KEY: str = 'highest_education'
-PDF_EDUCATION_MAJOR_KEY: str = 'specialized_area'
-PDF_EDUCATION_FORMAT_KEY: str = 'education_format'
-
-# Step 7 (work history)
-PDF_WORK_FROM_TO_KEY: str = 'work_from_to_'
-PDF_WORK_TASK_KEY: str = 'work_task_'
-PDF_WORK_UNIT_KEY: str = 'work_unit_'
-PDF_WORK_ROLE_KEY: str = 'work_role_'
-
-# Step 8 (award)
-PDF_AWARD_KEY: str = 'award'
-PDF_DISCIPLINE_KEY: str = 'discipline'
-
-# Step 9 (basic parents info)
-PDF_DAD_NAME_KEY: str = 'dad_name'
-PDF_DAD_AGE_KEY: str = 'dad_age'
-PDF_DAD_JOB_KEY: str = 'dad_job'
-
-PDF_MOM_NAME_KEY: str = 'mom_name'
-PDF_MOM_AGE_KEY: str = 'mom_age'
-PDF_MOM_JOB_KEY: str = 'mom_job'
-
-# Step 10 (sibling info)
-PDF_SIBLING_INFO_KEY: str = 'sibling_info_'
-PDF_SIBLING_POLITICAL_LEVEL_KEY: str = 'sibling_political_level'
-
-# Step 11 (spouse and kids)
-PDF_SPOUSE_NAME_KEY: str = 'spouse_name'
-PDF_SPOUSE_AGE_KEY: str = 'spouse_age'
-PDF_SPOUSE_JOB_KEY: str = 'spouse_job'
-
-PDF_CHILD_NAME_KEY: str = 'child_name_' # Note the trailing underscore
-PDF_CHILD_AGE_KEY: str = 'child_age_' # Note the trailing underscore
-PDF_CHILD_JOB_KEY: str = 'child_job_' # Note the trailing underscore
-
-# Step 12 conditional (social standing)
-PDF_SOCIAL_STANDING_KEY: str = 'social_standing'
-PDF_FAMILY_STANDING_KEY: str = 'family_standing'
-
-# Step 13 conditional (gov affiliation)
-PDF_YOUTH_ADM_DAY_KEY: str = 'youth_adm_day'
-PDF_YOUTH_ADM_MONTH_KEY: str = 'youth_adm_month'
-PDF_YOUTH_ADM_YEAR_KEY: str = 'youth_adm_year'
-PDF_PARTY_ADM_DAY_KEY: str = 'party_adm_day'
-PDF_PARTY_ADM_MONTH_KEY: str = 'party_adm_month'
-PDF_PARTY_ADM_YEAR_KEY: str = 'party_adm_year'
-
-# Step 14 conditional (parent history)
-PDF_PRE_AUGUST_REVOLUTION_KEY: str = 'pre_august_revolution'
-PDF_DURING_FRENCH_WAR_KEY: str = 'during_french_war'
-
-# Step 15 (health for military)
-PDF_HEALTH_KEY: str = 'health'
-PDF_HEIGHT_KEY: str = 'height'
-PDF_WEIGHT_KEY: str = 'weight'
-PDF_JOIN_ARMY_DATE_KEY: str = 'join_army_date'
-PDF_LEAVE_ARMY_DATE_KEY: str = 'leave_army_date'
-
-# Step 16 (emergency contact)
-PDF_EMERGENCY_CONTACT_DETAILS_KEY: str = 'emergency_contact_details'
-PDF_EMERGENCY_CONTACT_ADDRESS_KEY: str = 'emergency_contact_address'
-SAME_ADDRESS1_KEY: str = 'same_address1'
 
 PDF_TEMPLATE_PATH: str = "assets/TEMPLATE-Arial.pdf" # Ensure this path is correct
 PDF_FILENAME: str = "SoYeuLyLich_DaDien.pdf"
 
-# --- Global Helper Function: create_field ---
-def create_field(
-    label_text: str,
-    storage_key: str,
-    validation_func: ValidationFuncType,
-    input_type: str = 'text',
-    options: Optional[Union[List[Any], Dict[Any, Any]]] = None,
-    date_min_max: Optional[Tuple[Optional[date], Optional[date]]] = None,
-    select_display_key: Optional[str] = None,
-    select_value_key: Optional[str] = None,
-    error_message_for_field: Optional[str] = None,
-    form_attempted: bool = False,
-) -> Tuple[Optional[Element], ValidatorEntryType]:
+# --- DECOMPOSED UI CREATION HELPERS ---
+def _get_form_data() -> Dict[str, Any]:
+    """Safely retrieves the form_data dictionary from user storage."""
     user_storage = cast(Dict[str, Any], app.storage.user)
-    if FORM_DATA_KEY not in user_storage or not isinstance(user_storage.get(FORM_DATA_KEY), dict):
-        user_storage[FORM_DATA_KEY] = {} # Should be initialized elsewhere, but safeguard
+    if not isinstance(user_storage.get(FORM_DATA_KEY), dict):
+        user_storage[FORM_DATA_KEY] = {}
+    return cast(Dict[str, Any], user_storage[FORM_DATA_KEY])
 
-    form_data_dict: Dict[str, Any] = cast(Dict[str, Any], user_storage[FORM_DATA_KEY])
+def _create_text_input(field: FormField, current_value: Any, error_info: Tuple[bool, str]) -> Element:
+    has_error, msg = error_info
+    return ui.input(
+        label=field.label,
+        value=str(current_value),
+        on_change=lambda e, k=field.key: _get_form_data().update({k: e.value})
+    ).classes('full-width').props(f"outlined dense error-message='{msg}' error={has_error}")
 
-    default_value: Any = None
-    if input_type == 'select':
-        if options:
-            if isinstance(options, list) and options:
-                first_option: Any = options[0] # Can be str or dict
-                if isinstance(first_option, dict) and select_value_key:
-                    default_value = cast(Dict[str, Any],first_option).get(select_value_key)
-                else:
-                    default_value = cast(str, first_option) # Assumes first_option is a valid value type (e.g. str)
-            elif isinstance(options, dict) and options: # options is Dict[value, label]
-                default_value = next(iter(options.keys()), None)
-        # If options is empty or None, default_value remains None (or whatever it was before)
-    elif input_type == 'date':
-        default_value = None # Dates are typically None or a specific date string
-    elif input_type == 'radio':
-        if isinstance(options, dict) and options: # options is Dict[value, label]
-            default_value = next(iter(options.keys()), None)
-        elif isinstance(options, list) and options: # options is List[value] or List[Dict]
-            first_radio_option: Any = options[0]
-            if isinstance(first_radio_option, dict) and select_value_key: # if options = List[Dict]
-                 default_value = cast(Dict[str, Any], first_radio_option).get(select_value_key)
-            else: # if options = List[value]
-                default_value = cast(str, first_radio_option)
-    else: # text input
-        default_value = ''
+def _create_select_input(field: FormField, current_value: Any, error_info: Tuple[bool, str]) -> Element:
+    has_error, msg = error_info
+    select_el = ui.select(
+        options=field.options or [],
+        label=field.label,
+        value=current_value,
+        on_change=lambda e, k=field.key: _get_form_data().update({k: e.value})
+    ).classes('full-width').props(f"outlined dense error-message='{msg}' error={has_error}")
 
-    current_value: Any = form_data_dict.get(storage_key)
-    if current_value is None and storage_key not in form_data_dict: # Only use default if key truly absent
-        current_value = default_value
-    has_error_val: bool = form_attempted and bool(error_message_for_field)
-    actual_error_message: str = error_message_for_field or ''
+    if field.options and isinstance(field.options, list) and len(field.options) > 0 and isinstance(field.options[0], dict):
+        if field.select_display_key:
+            select_el.props(f"option-label='{field.select_display_key}'")
+        if field.select_value_key:
+            select_el.props(f"option-value='{field.select_value_key}'")
+    return select_el
 
-    el: Optional[Element] = None
-    with ui.column().classes('q-mb-sm full-width'): # Changed from q_mb_sm to q-mb-sm
-        if input_type == 'date':
-            date_value_from_storage: Any = current_value # Already retrieved with default handling
-            displayed_value_in_input: str = ''
-            value_for_datepicker: Optional[str] = None # Expects 'YYYY-MM-DD'
-            dt_obj_intermediate: Optional[Union[date, datetime]] = None
+def _create_radio_input(field: FormField, current_value: Any, error_info: Tuple[bool, str]) -> Element:
+    has_error, msg = error_info
+    # Note: NiceGUI radio doesn't have a built-in error prop, so we show a label.    
+    with ui.column().classes('q-gutter-y-xs'):
+        ui.label(field.label).classes('text-caption')
+        radio_el = ui.radio(
+            options=field.options or [],
+            value=current_value,
+            on_change=lambda e, k=field.key: _get_form_data().update({k: e.value})
+        ).props("inline")
+        if has_error:
+            ui.label(msg).classes('text-negative text-caption q-pl-sm')
+    return radio_el
 
-            if isinstance(date_value_from_storage, str): # Assume it's 'YYYY-MM-DD' if string
-                try:
-                    # Parse using DATE_FORMAT_NICEGUI for consistency with how it's stored
-                    dt_obj_intermediate = datetime.strptime(date_value_from_storage, DATE_FORMAT_NICEGUI)
-                    value_for_datepicker = date_value_from_storage # Already in correct format
-                except ValueError:
-                    # If it's a string but not in 'YYYY-MM-DD', it might be an invalid manual entry
-                    # or a different format. For display, show as is. Datepicker might not pick it up.
-                    displayed_value_in_input = date_value_from_storage
-            elif isinstance(date_value_from_storage, datetime):
-                dt_obj_intermediate = date_value_from_storage
-                value_for_datepicker = dt_obj_intermediate.strftime(DATE_FORMAT_NICEGUI)
-            elif isinstance(date_value_from_storage, date):
-                dt_obj_intermediate = date_value_from_storage
-                value_for_datepicker = dt_obj_intermediate.strftime(DATE_FORMAT_NICEGUI)
+def _create_date_input(field: FormField, current_value: Any, error_info: Tuple[bool, str]) -> Element:
+    """Creates a robust date input field with a popup calendar. CORRECTED VERSION."""
+    has_error, msg = error_info
+    form_data = _get_form_data()
 
-            # If successfully parsed, format for display
-            if dt_obj_intermediate:
-                displayed_value_in_input = dt_obj_intermediate.strftime(DATE_FORMAT_DISPLAY)
-
-
-            ui.label(label_text).classes('text-caption q-mb-xs')
-            date_input_element: ui.input = ui.input(value=displayed_value_in_input) \
-                .props(f"readonly clearable outlined dense error-message='{actual_error_message}' error={has_error_val}").classes('full-width')
-            menu_ref: Optional[ui.menu] = None # To store the menu reference
-
-            with date_input_element.add_slot('append'):
-                cal_icon = ui.icon('edit_calendar').classes('cursor-pointer')
-
-            with ui.menu().props('no-parent-event') as menu:
-                menu_ref = menu # Assign the menu instance
-                date_options_parts: List[str] = []
-                if date_min_max:
-                    min_d, max_d = date_min_max
-                    if min_d: date_options_parts.append(f"date >= '{min_d.strftime('%Y/%m/%d')}'")
-                    if max_d: date_options_parts.append(f"date <= '{max_d.strftime('%Y/%m/%d')}'")
-                # Construct props string carefully if date_options_parts is empty
-                options_prop_val = f':options="date => {" && ".join(date_options_parts)}"' if date_options_parts else ""
-
-                def on_date_change(e_date_event: ValueChangeEventArguments, sk_arg: str = storage_key,
-                                   inp_el_arg: ui.input = date_input_element, display_fmt_arg: str = DATE_FORMAT_DISPLAY,
-                                   # menu_arg: ui.menu = menu_ref # This lambda captures menu_ref from outer scope
-                                   ) -> None:
-                    new_date_val: Optional[str] = cast(Optional[str], e_date_event.value) # This is 'YYYY-MM-DD'
-                    form_data_dict[sk_arg] = new_date_val # Store in NiceGUI standard format
-
-                    displayed_val_on_change: str = ''
-                    if new_date_val:
-                        try: # Parse from NiceGUI format, display in user format
-                            dt_obj = datetime.strptime(new_date_val, DATE_FORMAT_NICEGUI)
-                            displayed_val_on_change = dt_obj.strftime(display_fmt_arg)
-                        except ValueError: # Should not happen if date picker provides valid format
-                            displayed_val_on_change = new_date_val # Fallback
-                    inp_el_arg.set_value(displayed_val_on_change)
-                    if menu_ref: menu_ref.close()
-
-
-                ui.date(value=value_for_datepicker, on_change=on_date_change).props(options_prop_val if options_prop_val else None)
-            
-            cal_icon.on('click', lambda: menu_ref.open() if menu_ref else None) # Connect icon click to open menu
-            el = date_input_element
-
-        elif input_type == 'text':
-            text_input_element: ui.input = ui.input(
-                label=label_text, value=str(form_data_dict.get(storage_key) or ''), 
-                on_change=lambda e, sk=storage_key: form_data_dict.update({sk: e.value}))
-            text_input_element.classes('full-width').props(f"outlined dense error-message='{actual_error_message}' error={has_error_val}")
-            el = text_input_element
-        elif input_type == 'select' and options is not None:
-            current_value_for_select = form_data_dict.get(storage_key)
-            if storage_key in [ETHNICITY_KEY, RELIGION_KEY] and current_value_for_select is None:
-                if isinstance(options, list) and options:
-                    current_value_for_select = options[0]
-                    form_data_dict[storage_key] = current_value_for_select # Explicitly set back if it was None
-                    print(f"DEBUG: Forcibly set '{storage_key}' to '{current_value_for_select}' \
-                          in create_field because it was None.")
-            # For select, if current_value is not among the options, it might not display correctly.
-            # NiceGUI usually handles this by showing nothing selected or the value itself if not found.
-            select_element: ui.select = ui.select(
-                options, label=label_text, value=current_value,
-                on_change=lambda e, sk=storage_key: form_data_dict.update({sk: e.value})
-            ).classes('full-width').props(f"outlined dense error-message='{actual_error_message}' error={has_error_val}")
-
-            if isinstance(options, list) and len(options) > 0 and isinstance(options[0], dict):
-                if select_display_key: select_element.props(f"option-label='{select_display_key}'")
-                if select_value_key: select_element.props(f"option-value='{select_value_key}'")
-            el = select_element
-        elif input_type == 'radio' and options is not None:
-            # ui.radio expects options as Dict[value, label] or List[value]
-            # If current_value from storage isn't a key in options (for dict) or in options (for list),
-            # it might not select anything initially.
-            radio_element: ui.radio = ui.radio(
-                options, value=current_value, # Pass label_text to radio for overall label
-                on_change=lambda e, sk=storage_key: form_data_dict.update({sk: e.value})).props("inline")
-            if has_error_val: ui.label(actual_error_message).classes('text-negative text-caption q-pl-sm') # q_pl_sm to q-pl-sm
-            el = radio_element
-        # Add other input types if necessary
-    
-    # Determine the correct way to retrieve value for validation based on input type
-    value_retrieval_strategy: ValidationArgsFuncType
-    if input_type == 'date':
-        # For date, validator_func expects a date object or None
-        def get_date_value_for_validation(data_dict_val: Dict[str, Any], key_val: str) -> Optional[date]:
-            val_from_storage_val: Any = data_dict_val.get(key_val) # This is 'YYYY-MM-DD' string or None
-            if isinstance(val_from_storage_val, str):
-                try:
-                    return datetime.strptime(val_from_storage_val, DATE_FORMAT_NICEGUI).date()
-                except ValueError:
-                    return None # Invalid date string for validation
-            # It should ideally not be date/datetime object if stored as string, but handle defensively
-            elif isinstance(val_from_storage_val, date): return val_from_storage_val
-            elif isinstance(val_from_storage_val, datetime): return val_from_storage_val.date()
-            return None
-        value_retrieval_strategy = get_date_value_for_validation
-    else:
-        # For other types, validator_func typically gets the raw stored value
-        value_retrieval_strategy = lambda data_dict_lambda, key_lambda: data_dict_lambda.get(key_lambda)
-
-    # The 'error_prefix' is a general prefix for the message, not the field label itself.
-    # Field-specific context for error messages is usually part of the validator's return message.
-    validator_entry: ValidatorEntryType = (storage_key, validation_func, value_retrieval_strategy, label_text) # Using label_text as prefix
-    return el, validator_entry
-
-
-# --- Helper functions for render_step5 ---
-def format_display_value(field_key: str,
-                         field_value: Any,
-                         internal_date_format: str, # e.g., DATE_FORMAT_NICEGUI
-                         ui_date_format: str) -> str: # e.g., DATE_FORMAT_DISPLAY
-    if isinstance(field_value, bool):
-        return "**Có**" if field_value else "Không"
-
-    # List of keys that store dates as strings in 'internal_date_format'
-    date_keys_list: List[str] = [
-        DOB_KEY, ID_PASSPORT_ISSUE_DATE_KEY, PARTY_DATE_KEY,
-        YOUTH_DATE_KEY
-    ]
-    if field_key in date_keys_list and isinstance(field_value, str) and field_value:
+    display_value = ""
+    # current_value from storage is expected to be 'YYYY-MM-DD' string or None.
+    if isinstance(current_value, str):
         try:
-            # Parse from the internal storage format, display in UI format
-            return datetime.strptime(field_value, internal_date_format).strftime(ui_date_format)
-        except ValueError:
-            return f"**{field_value}** (Lỗi định dạng)" # Indicate format error if stored string is wrong
+            dt_object = datetime.strptime(current_value, DATE_FORMAT_STORAGE)
+            display_value = dt_object.strftime(DATE_FORMAT_DISPLAY)
+        except (ValueError, TypeError):
+            display_value = "" # If garbage data, show as empty.
 
-    return f"**{str(field_value)}**"
-
-
-def get_key_label(field_key: str) -> str:
-    labels_map: Dict[str, str] = {
-        STEP0_ANS_KEY: 'Nộp cho cơ quan Nhà nước/Quân đội',
-
-        FULL_NAME_KEY: 'Họ và tên',
-        GENDER_KEY: 'Giới tính',
-        DOB_KEY: 'Ngày sinh',
-        BIRTH_PLACE_KEY: 'Nơi sinh',
-
-        ID_PASSPORT_NUM_KEY: 'Số CMND/CCCD',
-        ID_PASSPORT_ISSUE_DATE_KEY: 'Ngày cấp CMND/CCCD',
-        ID_PASSPORT_ISSUE_PLACE_KEY: 'Nơi cấp CMND/CCCD',
+    with ui.column().classes('q-mb-sm full-width'):
+        ui.label(field.label).classes('text-caption q-mb-xs')
         
-        REGISTERED_ADDRESS_KEY: 'Địa chỉ hộ khẩu',
-        PHONE_KEY: 'Số điện thoại',
+        # The readonly input field only ever shows the DISPLAY format.
+        date_input = ui.input(value=display_value, on_change=lambda: None) \
+            .props(f"readonly outlined dense error-message='{msg}' error={has_error}").classes('full-width')
 
-        ETHNICITY_KEY: 'Dân tộc',
-        RELIGION_KEY: 'Tôn giáo',
-        PLACE_OF_ORIGIN_KEY: 'Nguyên quán (quê của bố)',
+        with date_input.add_slot('append'):
+            ui.icon('edit_calendar').classes('cursor-pointer').on('click', lambda: menu.open())
 
-        FOREIGN_LANGUAGE: 'Ngoại ngữ',
-        EDUCATION_HIGH_SCHOOL_KEY: 'Bạn đã hoàn thành cấp ba (VD: 12/12)',
-        EDUCATION_HIGHEST_KEY: 'Bằng cấp cao nhất',
-        EDUCATION_MAJOR_KEY: 'Chuyên ngành đào tạo',
-        EDUCATION_FORMAT_KEY: 'Loại hình đào tạo',
+        with ui.menu() as menu:
+            # The date picker's value is always in STORAGE format ('YYYY-MM-DD')
+            date_picker = ui.date(value=current_value)
 
-        WORK_FROM_DATE_KEY: "Từ tháng năm (TT/YYYY)",
-        WORK_TO_DATE_KEY: "Đến tháng năm (TT/YYYY)",
-        WORK_TASK_KEY: "Nhiệm vụ công tác",
-        WORK_UNIT_KEY: "Đơn vị công tác",
-        WORK_ROLE_KEY: "Chức vụ công tác",
+    def handle_change(event: GenericEventArguments) -> None:
+        """
+        Handles the 'update:model-value' event from the date picker.
+        The event's argument contains the new date string or None if cleared.
+        """
+        # THE FIX: The value is in event.args, which is a list.
+        # For ui.date, it's the first and only element.
+        new_date_str = event.args[0] if event.args else None
+        
+        # 1. Update the backend data store with the STORAGE format value.
+        form_data[field.key] = new_date_str
 
-        AWARD_KEY: 'Khen thưởng',
-        DISCIPLINE_KEY: 'Kỷ luật',
+        # 2. Update the user-facing display input.
+        new_display_value = ""
+        if new_date_str:
+            try:
+                # Parse from STORAGE format
+                dt_object = datetime.strptime(new_date_str, DATE_FORMAT_STORAGE)
+                # Format for DISPLAY
+                new_display_value = dt_object.strftime(DATE_FORMAT_DISPLAY)
+            except (ValueError, TypeError):
+                new_display_value = "" # Handle potential bad data gracefully
+        
+        date_input.set_value(new_display_value)
+        # We don't need to close the menu, selecting a date does it automatically.
 
-        DAD_NAME_KEY: 'Họ tên Bố',
-        DAD_AGE_KEY: 'Tuổi Bố',
-        DAD_JOB_KEY: 'Nghề nghiệp Bố',
-        MOM_NAME_KEY: 'Họ tên Mẹ',
-        MOM_AGE_KEY: 'Tuổi Mẹ',
-        MOM_JOB_KEY: 'Nghề nghiệp Mẹ',
+    # Listen to the correct event and pass the full event object to our handler.
+    date_picker.on('update:model-value', handle_change)
+    
+    return date_input
 
-        SIBLING_NAME_KEY: 'Họ tên anh chị em',
-        SIBLING_AGE_KEY: 'Tuổi anh chị em',
-        SIBLING_POLITICAL_LEVEL_KEY: 'Trình độ chính trị anh chị em',
 
-        SPOUSE_NAME_KEY: 'Họ tên Vợ/Chồng',
-        SPOUSE_AGE_KEY: 'Tuổi Vợ/Chồng',
-        SPOUSE_JOB_KEY: 'Nghề nghiệp Vợ/Chồng',
+def _create_textarea_input(field: FormField, current_value: Any, error_info: Tuple[bool, str]) -> Element:
+    has_error, msg = error_info
+    return ui.textarea(
+        label=field.label,
+        value=str(current_value),
+        on_change=lambda e, k=field.key: _get_form_data().update({k: e.value})
+    ).classes('full-width').props(f"outlined dense error-message='{msg}' error={has_error}")
 
-        CHILD_NAME_KEY: 'Họ và tên con',
-        CHILD_AGE_KEY: 'Tuổi con',
-        CHILD_JOB_KEY: 'Nghề nghiệp con',
+def _create_checkbox_input(field: FormField, current_value: Any, error_info: Tuple[bool, str]) -> Element:
+    """Creates a checkbox input that properly displays validation errors."""
+    has_error, msg = error_info
 
-        SOCIAL_STANDING_KEY: 'Thành phần bản thân hiện nay',
-        FAMILY_STANDING_KEY: 'Thành phần gia đình sau cải cách ruộng đất',
+    with ui.column().classes('q-gutter-y-xs'):
+        checkbox = ui.checkbox(
+            text=field.label,
+            value=bool(current_value),
+            on_change=lambda e, k=field.key: _get_form_data().update({k: e.value})
+        )
+        if has_error:
+            ui.label(msg).classes('text-negative text-caption q-pl-sm')
+            checkbox.parent_slot.parent.classes('border border-negative rounded-borders')
+    return checkbox
 
-        YOUTH_DATE_KEY: 'Ngày kết nạp Đoàn',
-        PARTY_DATE_KEY: 'Ngày kết nạp Đảng',
+# --- THE NEW, SLIMMER FIELD FACTORY ---
+def create_field(field_definition: FormField, 
+                 error_message: Optional[str] = None,
+                 form_attempted: bool = False
+                 ) -> Element:
+    """
+    Creates a UI element based on a FormField definition.
+    This is a dispatcher, delegating to specialized _create_* functions.
+    It NO LONGER returns a validator entry.
+    """
+    form_data = _get_form_data()
+    current_value = form_data.get(field_definition.key)
+    has_error = form_attempted and bool(error_message)
 
-        PRE_AUGUST_REVOLUTION_KEY: 'Trước cách mạng tháng 8 \
-            làm gì? Ở đâu',
-        DURING_FRENCH_WAR_KEY: 'Trong kháng chiến chống \
-            thực dân Pháp làm gì? Ở đâu',
-        FROM_1955_PRESENT_KEY: 'Từ 1955 đến nay làm gì? Ở đâu?\
-            (Ghi rõ tên cơ quan, xí nghiệp hiện nay đang làm)',
-
-        EMERGENCY_CONTACT_DETAILS_KEY: 'Khi cần báo tin cho',
-        EMERGENCY_CONTACT_PLACE_KEY: 'Địa chỉ báo tin',
-        SAME_ADDRESS1_KEY: 'Nơi báo tin giống địa chỉ hộ khẩu',
+    creator_map: Dict[str, Callable[[FormField, Any, Tuple[bool, str]], Element]] = {
+        'text': _create_text_input,
+        'select': _create_select_input,
+        'radio': _create_radio_input,
+        'date': _create_date_input,
+        'textarea': _create_textarea_input,
+        'checkbox': _create_checkbox_input,
     }
-    return labels_map.get(field_key, field_key.replace('_KEY', '').replace('_', ' ').title())
+
+    creator = creator_map.get(field_definition.ui_type)
+    if not creator:
+        raise ValueError(f"Unsupported UI type: {field_definition.ui_type}")
+    
+    element = creator(field_definition, current_value, (has_error, error_message or ''))
+    return element
 
 # --- Helper to initialize form_data structure ---
-def initialize_form_data(form_data_to_populate: Dict[str, Any]) -> None:
-    """Populates the provided dictionary with default form field values."""
-    form_data_to_populate[STEP0_ANS_KEY] = 'Không'
-
-    form_data_to_populate[FULL_NAME_KEY] = ''
-    form_data_to_populate[GENDER_KEY] = ''
-    form_data_to_populate[DOB_KEY] = None
-    form_data_to_populate[BIRTH_PLACE_KEY] = ''
-
-    form_data_to_populate[ID_PASSPORT_NUM_KEY] = ''
-    form_data_to_populate[ID_PASSPORT_ISSUE_DATE_KEY] = None
-    form_data_to_populate[ID_PASSPORT_ISSUE_PLACE_KEY] = ''
-
-    form_data_to_populate[REGISTERED_ADDRESS_KEY] = ''
-    form_data_to_populate[PHONE_KEY] = ''
-
-    ethnic_groups: List[str] = getattr(para, 'ethnic_groups_vietnam', ['Kinh'])
-    form_data_to_populate[ETHNICITY_KEY] = ethnic_groups[0]
-    religion_opts: List[str] = getattr(para, 'religion_options', ['Không'])
-    form_data_to_populate[RELIGION_KEY] = religion_opts[0]
-    form_data_to_populate[PLACE_OF_ORIGIN_KEY] = ''
-
-    form_data_to_populate[FOREIGN_LANGUAGE] = ''
-    form_data_to_populate[EDUCATION_HIGH_SCHOOL_KEY] = ''
-    degrees_options: List[str] = getattr(para, 'degrees', [''])
-    form_data_to_populate[EDUCATION_HIGHEST_KEY] = degrees_options[0]
-    form_data_to_populate[EDUCATION_MAJOR_KEY] = ''
-    form_data_to_populate[EDUCATION_FORMAT_KEY] = ''
-
-    form_data_to_populate[WORK_FROM_DATE_KEY] = ''
-    form_data_to_populate[WORK_TO_DATE_KEY] = ''
-    form_data_to_populate[WORK_TASK_KEY] = ''
-    form_data_to_populate[WORK_UNIT_KEY] = ''
-    form_data_to_populate[WORK_ROLE_KEY] = ''
-
-    form_data_to_populate[AWARD_KEY] = 'Không có'
-    form_data_to_populate[DISCIPLINE_KEY] = 'Không có'
-
-    form_data_to_populate[DAD_NAME_KEY] = ''
-    form_data_to_populate[DAD_AGE_KEY] = ''
-    form_data_to_populate[DAD_JOB_KEY] = ''
-    form_data_to_populate[MOM_NAME_KEY] = ''
-    form_data_to_populate[MOM_AGE_KEY] = ''
-    form_data_to_populate[MOM_JOB_KEY] = ''
-
-    form_data_to_populate[SIBLING_NAME_KEY] = ''
-    form_data_to_populate[SIBLING_AGE_KEY] = ''
-    form_data_to_populate[SIBLING_POLITICAL_LEVEL_KEY] = 'Không'
-
-    form_data_to_populate[SPOUSE_NAME_KEY] = ''
-    form_data_to_populate[SPOUSE_AGE_KEY] = ''
-    form_data_to_populate[SPOUSE_JOB_KEY] = ''
-
-    form_data_to_populate[CHILD_NAME_KEY] = ''
-    form_data_to_populate[CHILD_AGE_KEY] = ''
-    form_data_to_populate[CHILD_JOB_KEY] = ''
-
-    form_data_to_populate[PARTY_DATE_KEY] = None
-    form_data_to_populate[YOUTH_DATE_KEY] = None
-
-    form_data_to_populate[PRE_AUGUST_REVOLUTION_KEY] = 'Không rõ'
-    form_data_to_populate[DURING_FRENCH_WAR_KEY] = 'Không rõ'
-    form_data_to_populate[FROM_1955_PRESENT_KEY] = ''
-
-    form_data_to_populate[EMERGENCY_CONTACT_DETAILS_KEY] = ''
-    form_data_to_populate[EMERGENCY_CONTACT_PLACE_KEY] = ''
-    form_data_to_populate[SAME_ADDRESS1_KEY] = False
+def initialize_form_data() -> None:
+    """Populates form_data with default values from the AppSchema."""
+    form_data = _get_form_data()
+    if form_data: # Don't re-initialize if data already exists
+        return
+    
+    for field in AppSchema.get_all_fields():
+        form_data[field.key] = field.default_value
+    
+    # Initialize dataframe keys to empty lists
+    form_data[AppSchema.WORK_DATAFRAME.key] = []
+    form_data[AppSchema.SIBLING_DATAFRAME.key] = []
+    form_data[AppSchema.CHILD_DATAFRAME.key] = []
 
 # --- PDF Data Mapping Utility ---
-def _split_date_for_pdf(date_str: Optional[str],
-                        internal_format_str: str) -> Tuple[str, str, str]:
+def _split_date_for_pdf(date_str: Optional[str]) -> Tuple[str, str, str]:
     """Helper to parse a date string (YYYY-MM-DD) and split into d, m, y for PDF."""
-    if date_str:
-        try:
-            dt_obj = datetime.strptime(date_str, internal_format_str)
-            return dt_obj.strftime('%d'), dt_obj.strftime('%m'), dt_obj.strftime('%Y')
-        except ValueError:
-            pass # Invalid date string
-    return '', '', ''
+    if not date_str:
+        return '', '', ''
+    try:
+        dt_obj = datetime.strptime(date_str, DATE_FORMAT_STORAGE)
+        return dt_obj.strftime('%d'), dt_obj.strftime('%m'), dt_obj.strftime('%Y')
+    except (ValueError, TypeError):
+        return '', '', ''
 
-def generate_pdf_data_mapping(
-    form_data_app: Dict[str, Any],
-    date_format_nicegui_app: str,
-    max_work_entries_pdf: int = 5,
-    max_siblings_pdf: int = 5, # Define max limits for loops
-    max_children_pdf: int = 5
-) -> Dict[str, Any]:
-    """
-    Transforms data from the application's format into a dictionary
-    where keys are the PDF form field names.
-    """
-    data_for_pdf: Dict[str, Any] = {}
-    
-    # --- Personal Info & ID ---
-    name = form_data_app.get(FULL_NAME_KEY, '')
-    data_for_pdf[PDF_FULL_NAME_P1_KEY] = name
-    data_for_pdf[PDF_FULL_NAME_P2_KEY] = name
-    data_for_pdf[PDF_GENDER_KEY] = form_data_app.get(GENDER_KEY, '')
-    
-    dob_day, dob_month, dob_year = _split_date_for_pdf(form_data_app.get(DOB_KEY), date_format_nicegui_app)
-    data_for_pdf[PDF_DOB_DAY_P1_KEY], data_for_pdf[PDF_DOB_MONTH_P1_KEY], data_for_pdf[PDF_DOB_YEAR_P1_KEY] = dob_day, dob_month, dob_year
-    data_for_pdf[PDF_DOB_DAY_P2_KEY], data_for_pdf[PDF_DOB_MONTH_P2_KEY], data_for_pdf[PDF_DOB_YEAR_P2_KEY] = dob_day, dob_month, dob_year
-
-    data_for_pdf[PDF_ID_NUM_KEY] = form_data_app.get(ID_PASSPORT_NUM_KEY, '')
-    id_day, id_month, id_year = _split_date_for_pdf(form_data_app.get(ID_PASSPORT_ISSUE_DATE_KEY), date_format_nicegui_app)
-    data_for_pdf[PDF_ID_ISSUE_DAY_KEY], data_for_pdf[PDF_ID_ISSUE_MONTH_KEY], data_for_pdf[PDF_ID_ISSUE_YEAR_KEY] = id_day, id_month, id_year
-    data_for_pdf[PDF_ID_ISSUE_PLACE_KEY] = form_data_app.get(ID_PASSPORT_ISSUE_PLACE_KEY, '')
-
-    # --- Contact & Origin ---
-    address = form_data_app.get(REGISTERED_ADDRESS_KEY, '')
-    data_for_pdf[PDF_REGISTERED_ADDRESS_P1_KEY] = address
-    data_for_pdf[PDF_REGISTERED_ADDRESS_P2_KEY] = address
-    data_for_pdf[PDF_PHONE_MOBILE_KEY] = form_data_app.get(PHONE_KEY, '')
-    data_for_pdf[PDF_PLACE_OF_ORIGIN_KEY] = form_data_app.get(PLACE_OF_ORIGIN_KEY, '')
-    data_for_pdf[PDF_ETHNICITY_KEY] = form_data_app.get(ETHNICITY_KEY, '')
-    data_for_pdf[PDF_RELIGION_KEY] = form_data_app.get(RELIGION_KEY, '')
-
-    # --- Education & Awards ---
-    data_for_pdf[PDF_FOREIGN_LANGUAGE] = form_data_app.get(FOREIGN_LANGUAGE, '')
-    data_for_pdf[PDF_EDUCATION_HIGH_SCHOOL_KEY] = form_data_app.get(EDUCATION_HIGH_SCHOOL_KEY, '')
-    data_for_pdf[PDF_EDUCATION_HIGHEST_KEY] = form_data_app.get(EDUCATION_HIGHEST_KEY, '')
-    data_for_pdf[PDF_EDUCATION_MAJOR_KEY] = form_data_app.get(EDUCATION_MAJOR_KEY, '')
-    data_for_pdf[PDF_EDUCATION_FORMAT_KEY] = form_data_app.get(EDUCATION_FORMAT_KEY, '')
-    data_for_pdf[PDF_AWARD_KEY] = form_data_app.get(AWARD_KEY, '')
-    data_for_pdf[PDF_DISCIPLINE_KEY] = form_data_app.get(DISCIPLINE_KEY, '')
-
-    # --- Work History (Mapping single entry to the first PDF slot) ---
-    work_from = form_data_app.get(WORK_FROM_DATE_KEY, "")
-    work_to = form_data_app.get(WORK_TO_DATE_KEY, "")
-    data_for_pdf[f'{PDF_WORK_FROM_TO_KEY}1'] = f"{work_from} - {work_to}" if work_from or work_to else ""
-    data_for_pdf[f'{PDF_WORK_TASK_KEY}1'] = form_data_app.get(WORK_TASK_KEY, "")
-    data_for_pdf[f'{PDF_WORK_UNIT_KEY}1'] = form_data_app.get(WORK_UNIT_KEY, "")
-    data_for_pdf[f'{PDF_WORK_ROLE_KEY}1'] = form_data_app.get(WORK_ROLE_KEY, "")
-
-    # --- Family ---
-    data_for_pdf[PDF_DAD_NAME_KEY] = form_data_app.get(DAD_NAME_KEY, '')
-    data_for_pdf[PDF_DAD_AGE_KEY] = form_data_app.get(DAD_AGE_KEY, '')
-    data_for_pdf[PDF_DAD_JOB_KEY] = form_data_app.get(DAD_JOB_KEY, '')
-    data_for_pdf[PDF_MOM_NAME_KEY] = form_data_app.get(MOM_NAME_KEY, '')
-    data_for_pdf[PDF_MOM_AGE_KEY] = form_data_app.get(MOM_AGE_KEY, '')
-    data_for_pdf[PDF_MOM_JOB_KEY] = form_data_app.get(MOM_JOB_KEY, '')
-    data_for_pdf[PDF_SPOUSE_NAME_KEY] = form_data_app.get(SPOUSE_NAME_KEY, '')
-    data_for_pdf[PDF_SPOUSE_AGE_KEY] = form_data_app.get(SPOUSE_AGE_KEY, '')
-    data_for_pdf[PDF_SPOUSE_JOB_KEY] = form_data_app.get(SPOUSE_JOB_KEY, '')
-    
-    # Sibling (mapping single entry to first PDF slot)
-    sibling_info = f"{form_data_app.get(SIBLING_NAME_KEY, '')}, {form_data_app.get(SIBLING_AGE_KEY, '')}"
-    data_for_pdf[f'{PDF_SIBLING_INFO_KEY}1'] = sibling_info if form_data_app.get(SIBLING_NAME_KEY) else ""
-    data_for_pdf[PDF_SIBLING_POLITICAL_LEVEL_KEY] = form_data_app.get(SIBLING_POLITICAL_LEVEL_KEY, '')
-    
-    # Child (mapping single entry to first PDF slot)
-    data_for_pdf[f'{PDF_CHILD_NAME_KEY}1'] = form_data_app.get(CHILD_NAME_KEY, '')
-    data_for_pdf[f'{PDF_CHILD_AGE_KEY}1'] = form_data_app.get(CHILD_AGE_KEY, '')
-    data_for_pdf[f'{PDF_CHILD_JOB_KEY}1'] = form_data_app.get(CHILD_JOB_KEY, '')
-
-    # --- Government/Social ---
-    data_for_pdf[PDF_SOCIAL_STANDING_KEY] = form_data_app.get(SOCIAL_STANDING_KEY, '')
-    data_for_pdf[PDF_FAMILY_STANDING_KEY] = form_data_app.get(FAMILY_STANDING_KEY, '')
-    youth_day, youth_month, youth_year = _split_date_for_pdf(form_data_app.get(YOUTH_DATE_KEY), date_format_nicegui_app)
-    data_for_pdf[PDF_YOUTH_ADM_DAY_KEY], data_for_pdf[PDF_YOUTH_ADM_MONTH_KEY], data_for_pdf[PDF_YOUTH_ADM_YEAR_KEY] = youth_day, youth_month, youth_year
-    party_day, party_month, party_year = _split_date_for_pdf(form_data_app.get(PARTY_DATE_KEY), date_format_nicegui_app)
-    data_for_pdf[PDF_PARTY_ADM_DAY_KEY], data_for_pdf[PDF_PARTY_ADM_MONTH_KEY], data_for_pdf[PDF_PARTY_ADM_YEAR_KEY] = party_day, party_month, party_year
-    data_for_pdf[PDF_PRE_AUGUST_REVOLUTION_KEY] = form_data_app.get(PRE_AUGUST_REVOLUTION_KEY, '')
-    data_for_pdf[PDF_DURING_FRENCH_WAR_KEY] = form_data_app.get(DURING_FRENCH_WAR_KEY, '')
-
-    # --- Health/Military & Emergency ---
-    data_for_pdf[PDF_HEALTH_KEY] = form_data_app.get(HEALTH_KEY, '')
-    data_for_pdf[PDF_HEIGHT_KEY] = form_data_app.get(HEIGHT_KEY, '')
-    data_for_pdf[PDF_WEIGHT_KEY] = form_data_app.get(WEIGHT_KEY, '')
-    data_for_pdf[PDF_JOIN_ARMY_DATE_KEY] = form_data_app.get(JOIN_ARMY_DATE_KEY, '') # Assuming dates are stored as strings here for now
-    data_for_pdf[PDF_LEAVE_ARMY_DATE_KEY] = form_data_app.get(LEAVE_ARMY_DATE_KEY, '')
-    data_for_pdf[PDF_EMERGENCY_CONTACT_DETAILS_KEY] = form_data_app.get(EMERGENCY_CONTACT_DETAILS_KEY, '')
-    data_for_pdf[PDF_EMERGENCY_CONTACT_ADDRESS_KEY] = form_data_app.get(EMERGENCY_CONTACT_PLACE_KEY, '')
-
-    # Siblings
-    siblings_list = cast(List[Dict[str, Any]], form_data_app.get(SIBLINGS_KEY, []))
-    for i in range(max_siblings_pdf):
-        pdf_idx = i + 1
-        if i < len(siblings_list):
-            entry = siblings_list[i]
-            # Assuming you have one field for 'Tên, tuổi, chỗ ở, nghề nghiệp, trình độ'
-            sibling_info = f"{entry.get('name', '')}, {entry.get('age', '')} tuổi. Nghề nghiệp: \
-                {entry.get('job', '')}. Chỗ ở: {entry.get('address', '')}"
-            data_for_pdf[f'{PDF_SIBLING_INFO_KEY}{pdf_idx}'] = sibling_info
+def _map_dataframe_to_pdf(
+    pdf_data: Dict[str, Any],
+    dataframe: List[Dict[str, str]],
+    field_map: Dict[str, str], # Maps form key (e.g. 'work_task') to PDF prefix (e.g. 'work_task_')
+    max_entries: int
+) -> None:
+    """Generic helper to map a list of dicts to indexed PDF fields."""
+    for i in range(max_entries):
+        if i < len(dataframe):
+            entry = dataframe[i]
+            for form_key, pdf_prefix in field_map.items():
+                pdf_data[f'{pdf_prefix}{i+1}'] = entry.get(form_key, '')
         else:
-            data_for_pdf[f'{PDF_SIBLING_INFO_KEY}{pdf_idx}'] = ""
+            # Ensure unused PDF fields are blank
+            for pdf_prefix in field_map.values():
+                pdf_data[f'{pdf_prefix}{i+1}'] = ''
 
-    # Children
-    children_list = cast(List[Dict[str, Any]], form_data_app.get(CHILDREN_KEY, []))
-    for i in range(max_children_pdf):
-        pdf_idx = i + 1
-        if i < len(children_list):
-            entry = children_list[i]
-            data_for_pdf[f'{PDF_CHILD_NAME_KEY}{pdf_idx}'] = entry.get('name', '')
-            data_for_pdf[f'{PDF_CHILD_AGE_KEY}{pdf_idx}'] = entry.get('age', '')
-            data_for_pdf[f'{PDF_CHILD_JOB_KEY}{pdf_idx}'] = entry.get('job', '')
-        else:
-            data_for_pdf[f'{PDF_CHILD_NAME_KEY}{pdf_idx}'] = ""
-            data_for_pdf[f'{PDF_CHILD_AGE_KEY}{pdf_idx}'] = ""
-            data_for_pdf[f'{PDF_CHILD_JOB_KEY}{pdf_idx}'] = ""
-            
-    return data_for_pdf
+def generate_pdf_data_mapping() -> Dict[str, Any]:
+    """
+    Transforms app data into a PDF-ready dictionary by dynamically
+    iterating through the AppSchema. No more hardcoding.
+    """
+    form_data = _get_form_data()
+    pdf_data: Dict[str, Any] = {}
+
+    # 1. Map all simple fields defined in AppSchema
+    for field in AppSchema.get_all_fields():
+        if not field.pdf_map or field.key not in form_data:
+            continue
+        
+        value = form_data.get(field.key)
+
+        if field.ui_type == 'date' and isinstance(field.pdf_map, list) and field.split_date==True:
+            day, month, year = _split_date_for_pdf(cast(Optional[str], value))
+            pdf_data[field.pdf_map[0]] = day
+            pdf_data[field.pdf_map[1]] = month
+            pdf_data[field.pdf_map[2]] = year
+
+        elif isinstance(field.pdf_map, list):
+            for pdf_key in field.pdf_map:
+                pdf_data[pdf_key] = value
+        else: # pdf_map is a string
+            pdf_data[field.pdf_map] = value
+
+    # 2. Map the dataframes (work, siblings, children)
+    # This replaces the repetitive, bug-prone loops.
+    # Note: THIS IS WHERE THE SIBLING/CHILD BUG WAS FIXED.
+    
+    _map_dataframe_to_pdf(
+        pdf_data=pdf_data,
+        dataframe=cast(List[Dict[str, str]], form_data.get(AppSchema.WORK_DATAFRAME.key, [])),
+        field_map={
+            "work_from_to": "work_from_to_", # You'll need to combine from/to before this step
+            "work_task": "work_task_",
+            "work_unit": "work_unit_",
+            "work_role": "work_role_", 
+        },
+        max_entries=5
+    )
+    
+    _map_dataframe_to_pdf(
+        pdf_data=pdf_data,
+        dataframe=cast(List[Dict[str, str]], form_data.get(AppSchema.SIBLING_DATAFRAME.key, [])),
+        field_map={
+            "sibling_name": "sibling_name_age_job_", # Also needs combining
+            "sibling_address": "sibling_address_",
+            "sibling_political_level": "sibling_political_level_",
+        },
+        max_entries=5
+    )
+    
+    _map_dataframe_to_pdf(
+        pdf_data=pdf_data,
+        dataframe=cast(List[Dict[str, str]], form_data.get(AppSchema.CHILD_DATAFRAME.key, [])),
+        field_map={
+            "child_name": "child_name_",
+            "child_age": "child_age_",
+            "child_job": "child_job_",
+        },
+        max_entries=5
+    )
+
+    return pdf_data
