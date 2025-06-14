@@ -170,7 +170,7 @@ class AppSchema:
     
     EMERGENCY_CONTACT_PLACE = FormField(key='emergency_place', label='Địa chỉ báo tin', 
                                         pdf_map='emergency_contact_address')
-    SAME_ADDRESS_AS_REGISTERED = FormField(key='same_address1', label='Nơi báo tin giống địa chỉ hộ khẩu',\
+    SAME_ADDRESS_AS_REGISTERED = FormField(key='same_address_as_registered', label='Nơi báo tin giống địa chỉ hộ khẩu',\
                                            ui_type='checkbox', default_value=False)
     
 
@@ -327,7 +327,8 @@ def _create_checkbox_input(field: FormField, current_value: Any, error_info: Tup
         )
         if has_error:
             ui.label(msg).classes('text-negative text-caption q-pl-sm')
-            checkbox.parent_slot.parent.classes('border border-negative rounded-borders')
+            if checkbox.parent_slot and (parent := checkbox.parent_slot.parent):
+                parent.classes('border border-negative rounded-borders')
     return checkbox
 
 # --- THE NEW, SLIMMER FIELD FACTORY ---

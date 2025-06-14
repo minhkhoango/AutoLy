@@ -380,6 +380,8 @@ def render_generic_step(step_def: StepDefinition) -> None:
 
         ui.button("Xác nhận & Tiếp tục →", on_click=lambda: _handle_step_confirmation()) \
             .props('color=primary unelevated')
+        
+
 
 def render_review_step(step_def: 'StepDefinition') -> None:
     """A special renderer for the final review step."""
