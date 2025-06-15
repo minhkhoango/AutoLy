@@ -1,10 +1,9 @@
 # utils.py
 from __future__ import annotations
-from nicegui import ui, app # ui, app not directly used here, but often kept for consistency
-from nicegui.element import Element # Not used here, consider removing if not needed by other utils
-from nicegui.events import GenericEventArguments # Not used here
+from nicegui import ui, app
+from nicegui.element import Element
 from datetime import datetime, date
-from typing import Any, Callable, Dict, List, Optional, Union, Tuple, TypeAlias, cast
+from typing import Any, Callable, Dict, List, NotRequired, Optional, Union, Tuple, TypeAlias, TypedDict, cast
 from dataclasses import dataclass
 import para # Assuming para.py exists and might be used for defaults
 
@@ -18,7 +17,6 @@ class FormField:
     key: str
     label: str
     ui_type: str = 'text'
-    # pdf_map can be a single key, a list for repeated values, or a prefix for indexed lists.
     pdf_map: Optional[Union[str, List[str]]] = None
     options: Optional[Union[List[str], Dict[str, str]]] = None
     split_date: bool = True
@@ -27,9 +25,14 @@ class FormField:
     select_value_key: Optional[str] = None
     default_value: Any = ''
 
+class DataframePDFColumn(TypedDict):
+    """Defines how to map a single dataframe column """
+    key: str # The key from the form's dataframe row (work_task)
+    pdf_field_prefix: str # The predfix for the pdf field (work_task_)
+    # The magic 
+    transformer: NotRequired[Callable[[Dict[str, Any]], str]]
+
 # --- APPLICATION SCHEMA DEFINITION ---
-# This class is now the *only* place you need to define fields.
-# Add, remove, or change fields here, and the app adapts.
 class AppSchema:
     """
     The single source of truth for the entire application form.
@@ -110,7 +113,7 @@ class AppSchema:
     # Step 11 (spouse and kids)
     SPOUSE_NAME = FormField(key='spouse_name', label='Họ tên Vợ/Chồng', pdf_map='spouse_name', default_value='')
     SPOUSE_AGE = FormField(key='spouse_age', label='Tuổi Vợ/Chồng', pdf_map='spouse_age', default_value='')
-    SPOUSE_JOB = FormField(key='spouse_job', label='Nghề nghiệp Vợ/Chồng', pdf_map='mom_job', default_value='')
+    SPOUSE_JOB = FormField(key='spouse_job', label='Nghề nghiệp Vợ/Chồng', pdf_map='spouse_job', default_value='')
 
     CHILD_NAME = FormField(key='child_name', label='Họ tên con', pdf_map='child_name', default_value='')
     CHILD_AGE = FormField(key='child_age', label='Tuổi con', pdf_map='child_age', default_value='')
@@ -173,12 +176,42 @@ class AppSchema:
     SAME_ADDRESS_AS_REGISTERED = FormField(key='same_address_as_registered', label='Nơi báo tin giống địa chỉ hộ khẩu',\
                                            ui_type='checkbox', default_value=False)
     
-
     # --- DATAFRAME KEYS (for AgGrid-like structures) ---
     # These keys hold list[dict] data
     WORK_DATAFRAME = FormField(key='work_dataframe', label='Lịch sử làm việc')
     SIBLING_DATAFRAME = FormField(key='sibling_dataframe', label='Thông tin anh chị em')
     CHILD_DATAFRAME = FormField(key='child_dataframe', label='Thông tin con cái')
+
+
+    # --- DATAFRAME-TO-PDF BLUEPRINTS ---
+    # This is the new source of truth for mapping the work history dataframe
+    WORK_DATAFRAME_PDF_MAPPING: List[DataframePDFColumn] = [
+        {
+            'key': 'work_from',
+            'pdf_field_prefix': 'work_from_to_',
+            'transformer': lambda row: f"{row.get('work_from', '')}-{row.get('work_to', '')}"
+        },
+        {'key': 'work_task', 'pdf_field_prefix': 'work_task_'},
+        {'key': 'work_unit', 'pdf_field_prefix': 'work_unit_'},
+        {'key': 'work_role', 'pdf_field_prefix': 'work_role_'},
+    ]
+    SIBLING_DATAFRAME_PDF_MAPPING: List[DataframePDFColumn] = [
+        {'key': 'sibling_name',
+         'pdf_field_prefix': 'sibling_name_age_job_',
+         'transformer': lambda row: (
+                f"{row.get('sibling_name', '')} - "
+                f"Tuổi: {row.get('sibling_age', '')} - "
+                f"Nghề nghiệp: {row.get('sibling_job', '')}"
+            )
+         },
+         {'key': 'sibling_address', 'pdf_field_prefix': 'sibling_address_'},
+        #  {'key': 'sibling_political_level', 'pdf_field_prefix': 'sibling_political_level_'},
+    ]
+    CHILD_DATAFRAME_PDF_MAPPING: List[DataframePDFColumn] = [
+        {'key': 'child_name', 'pdf_field_prefix': 'child_name_'},
+        {'key': 'child_age', 'pdf_field_prefix': 'child_age_'},
+        {'key': 'child_job', 'pdf_field_prefix': 'child_job_'},
+    ]
 
     @classmethod
     def get_all_fields(cls) -> List[FormField]:
@@ -202,29 +235,27 @@ PDF_TEMPLATE_PATH: str = "assets/TEMPLATE-Arial.pdf" # Ensure this path is corre
 PDF_FILENAME: str = "SoYeuLyLich_DaDien.pdf"
 
 # --- DECOMPOSED UI CREATION HELPERS ---
-def _get_form_data() -> Dict[str, Any]:
+def get_form_data() -> Dict[str, Any]:
     """Safely retrieves the form_data dictionary from user storage."""
     user_storage = cast(Dict[str, Any], app.storage.user)
     if not isinstance(user_storage.get(FORM_DATA_KEY), dict):
         user_storage[FORM_DATA_KEY] = {}
     return cast(Dict[str, Any], user_storage[FORM_DATA_KEY])
 
-def _create_text_input(field: FormField, current_value: Any, error_info: Tuple[bool, str]) -> Element:
-    has_error, msg = error_info
+def _create_text_input(field: FormField, current_value: Any) -> Element:
     return ui.input(
         label=field.label,
         value=str(current_value),
-        on_change=lambda e, k=field.key: _get_form_data().update({k: e.value})
-    ).classes('full-width').props(f"outlined dense error-message='{msg}' error={has_error}")
+        on_change=lambda e, k=field.key: get_form_data().update({k: e.value})
+    ).classes('full-width').props(f"outlined dense ")
 
-def _create_select_input(field: FormField, current_value: Any, error_info: Tuple[bool, str]) -> Element:
-    has_error, msg = error_info
+def _create_select_input(field: FormField, current_value: Any) -> Element:
     select_el = ui.select(
         options=field.options or [],
         label=field.label,
         value=current_value,
-        on_change=lambda e, k=field.key: _get_form_data().update({k: e.value})
-    ).classes('full-width').props(f"outlined dense error-message='{msg}' error={has_error}")
+        on_change=lambda e, k=field.key: get_form_data().update({k: e.value})
+    ).classes('full-width').props(f"outlined dense")
 
     if field.options and isinstance(field.options, list) and len(field.options) > 0 and isinstance(field.options[0], dict):
         if field.select_display_key:
@@ -233,119 +264,123 @@ def _create_select_input(field: FormField, current_value: Any, error_info: Tuple
             select_el.props(f"option-value='{field.select_value_key}'")
     return select_el
 
-def _create_radio_input(field: FormField, current_value: Any, error_info: Tuple[bool, str]) -> Element:
-    has_error, msg = error_info
+def _create_radio_input(field: FormField, current_value: Any) -> Element:
     # Note: NiceGUI radio doesn't have a built-in error prop, so we show a label.    
     with ui.column().classes('q-gutter-y-xs'):
         ui.label(field.label).classes('text-caption')
         radio_el = ui.radio(
             options=field.options or [],
             value=current_value,
-            on_change=lambda e, k=field.key: _get_form_data().update({k: e.value})
+            on_change=lambda e, k=field.key: get_form_data().update({k: e.value})
         ).props("inline")
-        if has_error:
-            ui.label(msg).classes('text-negative text-caption q-pl-sm')
     return radio_el
 
-def _create_date_input(field: FormField, current_value: Any, error_info: Tuple[bool, str]) -> Element:
-    """Creates a robust date input field with a popup calendar. CORRECTED VERSION."""
-    has_error, msg = error_info
-    form_data = _get_form_data()
-
-    display_value = ""
-    # current_value from storage is expected to be 'YYYY-MM-DD' string or None.
-    if isinstance(current_value, str):
-        try:
-            dt_object = datetime.strptime(current_value, DATE_FORMAT_STORAGE)
-            display_value = dt_object.strftime(DATE_FORMAT_DISPLAY)
-        except (ValueError, TypeError):
-            display_value = "" # If garbage data, show as empty.
-
-    with ui.column().classes('q-mb-sm full-width'):
-        ui.label(field.label).classes('text-caption q-mb-xs')
-        
-        # The readonly input field only ever shows the DISPLAY format.
-        date_input = ui.input(value=display_value, on_change=lambda: None) \
-            .props(f"readonly outlined dense error-message='{msg}' error={has_error}").classes('full-width')
-
-        with date_input.add_slot('append'):
-            ui.icon('edit_calendar').classes('cursor-pointer').on('click', lambda: menu.open())
-
-        with ui.menu() as menu:
-            # The date picker's value is always in STORAGE format ('YYYY-MM-DD')
-            date_picker = ui.date(value=current_value)
-
-    def handle_change(event: GenericEventArguments) -> None:
-        """
-        Handles the 'update:model-value' event from the date picker.
-        The event's argument contains the new date string or None if cleared.
-        """
-        # THE FIX: The value is in event.args, which is a list.
-        # For ui.date, it's the first and only element.
-        new_date_str = event.args[0] if event.args else None
-        
-        # 1. Update the backend data store with the STORAGE format value.
-        form_data[field.key] = new_date_str
-
-        # 2. Update the user-facing display input.
-        new_display_value = ""
-        if new_date_str:
-            try:
-                # Parse from STORAGE format
-                dt_object = datetime.strptime(new_date_str, DATE_FORMAT_STORAGE)
-                # Format for DISPLAY
-                new_display_value = dt_object.strftime(DATE_FORMAT_DISPLAY)
-            except (ValueError, TypeError):
-                new_display_value = "" # Handle potential bad data gracefully
-        
-        date_input.set_value(new_display_value)
-        # We don't need to close the menu, selecting a date does it automatically.
-
-    # Listen to the correct event and pass the full event object to our handler.
-    date_picker.on('update:model-value', handle_change)
+def _create_date_input(field: FormField, current_value: Any) -> Element:
+    """
+    Creates a robust, 3-field date input (Day, Month, Year) for unambiguous entry.
+    This is the most reliable method, avoiding all popup/CSS issues.
+    """
+    form_data = get_form_data()
     
-    return date_input
+    # --- State Setup ---
+    day_val, month_val, year_val = '', '', ''
+    storage_value: str | None = form_data.get(field.key)
+    
+    # Pre-fill D/M/Y fields if a valid date is already in storage.
+    if storage_value:
+        try:
+            dt_object = datetime.strptime(storage_value, DATE_FORMAT_STORAGE)
+            day_val = dt_object.strftime('%d')
+            month_val = dt_object.strftime('%m')
+            year_val = dt_object.strftime('%Y')
+        except (ValueError, TypeError):
+            # If storage has bad data, ensure it's cleared.
+            form_data[field.key] = None
+
+    # --- UI Component Creation ---
+    
+    # We create a container row for the three input fields.
+    with ui.row().classes('w-full no-wrap items-center').props('align=bottom') as container:
+        ui.label(field.label).classes('text-caption col-shrink q-pr-md')
+        
+        # We need references to each input to read their values.
+        day_input = ui.input(placeholder='DD', value=day_val).props('outlined dense style="width: 60px;" max_length=2')
+        month_input = ui.input(placeholder='MM', value=month_val).props('outlined dense style="width: 60px;" max_length=2')
+        year_input = ui.input(placeholder='YYYY', value=year_val).props('outlined dense style="width: 90px;" max_length=4')
 
 
-def _create_textarea_input(field: FormField, current_value: Any, error_info: Tuple[bool, str]) -> Element:
-    has_error, msg = error_info
+    # --- Synchronization Logic ---
+    def sync_date_parts() -> None:
+        """Reads the three fields, validates them, and updates the canonical storage value."""
+        d: str = day_input.value
+        m: str = month_input.value
+        y: str = year_input.value
+        
+        # Only proceed if all fields are filled.
+        if d and m and y and d.isdigit() and m.isdigit() and y.isdigit():
+            try:
+                # Pad day and month for safety
+                d_str, m_str = f"{int(d):02d}", f"{int(m):02d}"
+                # Validate the date is a real calendar date (e.g., no Feb 30).
+                dt_object = datetime.strptime(f'{y}-{m_str}-{d_str}', '%Y-%m-%d')
+                
+                # Check against min/max bounds if they exist.
+                if field.date_min_max:
+                    min_d, max_d = field.date_min_max
+                    if (min_d and dt_object.date() < min_d) or \
+                       (max_d and dt_object.date() > max_d):
+                        # If out of bounds, clear the storage. Let validation handle the error message.
+                        form_data[field.key] = None
+                        return
+                        
+                # If everything is valid, update the single source of truth.
+                form_data[field.key] = dt_object.strftime(DATE_FORMAT_STORAGE)
+
+            except ValueError:
+                # The date is invalid (e.g., 30/02/2025). Clear the storage.
+                # The required() validator will catch this on submission.
+                form_data[field.key] = None
+        else:
+            # If any field is empty or non-numeric, the date is incomplete.
+            form_data[field.key] = None
+
+    # --- Connect Logic to Events ---
+    # We sync the data whenever the user changes any of the three fields.
+    day_input.on('change', sync_date_parts)
+    month_input.on('change', sync_date_parts)
+    year_input.on('change', sync_date_parts)
+
+    # Return the main row container.
+    return container
+
+def _create_textarea_input(field: FormField, current_value: Any) -> Element:
     return ui.textarea(
         label=field.label,
         value=str(current_value),
-        on_change=lambda e, k=field.key: _get_form_data().update({k: e.value})
-    ).classes('full-width').props(f"outlined dense error-message='{msg}' error={has_error}")
+        on_change=lambda e, k=field.key: get_form_data().update({k: e.value})
+    ).classes('full-width').props(f"outlined dense")
 
-def _create_checkbox_input(field: FormField, current_value: Any, error_info: Tuple[bool, str]) -> Element:
+def _create_checkbox_input(field: FormField, current_value: Any) -> Element:
     """Creates a checkbox input that properly displays validation errors."""
-    has_error, msg = error_info
 
     with ui.column().classes('q-gutter-y-xs'):
         checkbox = ui.checkbox(
             text=field.label,
             value=bool(current_value),
-            on_change=lambda e, k=field.key: _get_form_data().update({k: e.value})
+            on_change=lambda e, k=field.key: get_form_data().update({k: e.value})
         )
-        if has_error:
-            ui.label(msg).classes('text-negative text-caption q-pl-sm')
-            if checkbox.parent_slot and (parent := checkbox.parent_slot.parent):
-                parent.classes('border border-negative rounded-borders')
     return checkbox
 
-# --- THE NEW, SLIMMER FIELD FACTORY ---
-def create_field(field_definition: FormField, 
-                 error_message: Optional[str] = None,
-                 form_attempted: bool = False
-                 ) -> Element:
+def create_field(field_definition: FormField) -> Element:
     """
     Creates a UI element based on a FormField definition.
     This is a dispatcher, delegating to specialized _create_* functions.
     It NO LONGER returns a validator entry.
     """
-    form_data = _get_form_data()
+    form_data = get_form_data()
     current_value = form_data.get(field_definition.key)
-    has_error = form_attempted and bool(error_message)
 
-    creator_map: Dict[str, Callable[[FormField, Any, Tuple[bool, str]], Element]] = {
+    creator_map: Dict[str, Callable[[FormField, Any], Element]] = {
         'text': _create_text_input,
         'select': _create_select_input,
         'radio': _create_radio_input,
@@ -358,13 +393,13 @@ def create_field(field_definition: FormField,
     if not creator:
         raise ValueError(f"Unsupported UI type: {field_definition.ui_type}")
     
-    element = creator(field_definition, current_value, (has_error, error_message or ''))
+    element = creator(field_definition, current_value)
     return element
 
 # --- Helper to initialize form_data structure ---
 def initialize_form_data() -> None:
     """Populates form_data with default values from the AppSchema."""
-    form_data = _get_form_data()
+    form_data = get_form_data()
     if form_data: # Don't re-initialize if data already exists
         return
     
@@ -390,26 +425,34 @@ def _split_date_for_pdf(date_str: Optional[str]) -> Tuple[str, str, str]:
 def _map_dataframe_to_pdf(
     pdf_data: Dict[str, Any],
     dataframe: List[Dict[str, str]],
-    field_map: Dict[str, str], # Maps form key (e.g. 'work_task') to PDF prefix (e.g. 'work_task_')
+    column_map: List[DataframePDFColumn],
     max_entries: int
 ) -> None:
     """Generic helper to map a list of dicts to indexed PDF fields."""
     for i in range(max_entries):
+        pdf_index = i+1
         if i < len(dataframe):
-            entry = dataframe[i]
-            for form_key, pdf_prefix in field_map.items():
-                pdf_data[f'{pdf_prefix}{i+1}'] = entry.get(form_key, '')
+            row_data = dataframe[i]
+            for column_rule in column_map:
+                pdf_field_name = f"{column_rule['pdf_field_prefix']}{[pdf_index]}"
+
+                if 'transformer' in column_rule:
+                    transformer_func = column_rule['transformer']
+                    pdf_data[pdf_field_name] = transformer_func(row_data)
+                else:
+                    pdf_data[pdf_field_name] = row_data.get(column_rule['key'], '')
         else:
-            # Ensure unused PDF fields are blank
-            for pdf_prefix in field_map.values():
-                pdf_data[f'{pdf_prefix}{i+1}'] = ''
+            # For rows that don't exist
+            for column_rule in column_map:
+                pdf_field_name = f"{column_rule['pdf_field_prefix']}{pdf_index}"
+                pdf_data[pdf_field_name] = ''
 
 def generate_pdf_data_mapping() -> Dict[str, Any]:
     """
     Transforms app data into a PDF-ready dictionary by dynamically
     iterating through the AppSchema. No more hardcoding.
     """
-    form_data = _get_form_data()
+    form_data = get_form_data()
     pdf_data: Dict[str, Any] = {}
 
     # 1. Map all simple fields defined in AppSchema
@@ -432,40 +475,24 @@ def generate_pdf_data_mapping() -> Dict[str, Any]:
             pdf_data[field.pdf_map] = value
 
     # 2. Map the dataframes (work, siblings, children)
-    # This replaces the repetitive, bug-prone loops.
-    # Note: THIS IS WHERE THE SIBLING/CHILD BUG WAS FIXED.
-    
     _map_dataframe_to_pdf(
         pdf_data=pdf_data,
         dataframe=cast(List[Dict[str, str]], form_data.get(AppSchema.WORK_DATAFRAME.key, [])),
-        field_map={
-            "work_from_to": "work_from_to_", # You'll need to combine from/to before this step
-            "work_task": "work_task_",
-            "work_unit": "work_unit_",
-            "work_role": "work_role_", 
-        },
+        column_map=AppSchema.WORK_DATAFRAME_PDF_MAPPING,
         max_entries=5
     )
     
     _map_dataframe_to_pdf(
         pdf_data=pdf_data,
         dataframe=cast(List[Dict[str, str]], form_data.get(AppSchema.SIBLING_DATAFRAME.key, [])),
-        field_map={
-            "sibling_name": "sibling_name_age_job_", # Also needs combining
-            "sibling_address": "sibling_address_",
-            "sibling_political_level": "sibling_political_level_",
-        },
+        column_map=AppSchema.SIBLING_DATAFRAME_PDF_MAPPING,
         max_entries=5
     )
     
     _map_dataframe_to_pdf(
         pdf_data=pdf_data,
         dataframe=cast(List[Dict[str, str]], form_data.get(AppSchema.CHILD_DATAFRAME.key, [])),
-        field_map={
-            "child_name": "child_name_",
-            "child_age": "child_age_",
-            "child_job": "child_job_",
-        },
+        column_map=AppSchema.CHILD_DATAFRAME_PDF_MAPPING,
         max_entries=5
     )
 

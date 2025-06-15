@@ -8,7 +8,6 @@ from typing import (
     Any, Callable, List, Dict, Optional, Tuple, TypedDict, Union,
     TypeAlias, cast
 )
-
 # Assuming validation.py and para.py are in the same directory or accessible in PYTHONPATH
 from validation import (
     ValidatorFunc,
@@ -38,7 +37,7 @@ from utils import (
     STEP_KEY, FORM_DATA_KEY, NEEDS_CLEARANCE_KEY,
     FORM_ATTEMPTED_SUBMISSION_KEY, CURRENT_STEP_ERRORS_KEY,
     PDF_TEMPLATE_PATH, PDF_FILENAME,
-    create_field, initialize_form_data, generate_pdf_data_mapping
+    create_field, initialize_form_data, generate_pdf_data_mapping, get_form_data
 )
 
 # --- Modernized Type Aliases ---
@@ -171,9 +170,6 @@ def execute_step_validators(
 # ===================================================================
 # 3. CORE LOGIC & NAVIGATION
 # ===================================================================
-
-_is_handling_confirmation: bool = False # Global flag to prevent re-entr
-
 def _get_current_step_def() -> Optional[StepDefinition]:
     """Retrieves the full definition dictionary for the current step."""
     user_storage = cast(Dict[str, Any], app.storage.user)
@@ -183,11 +179,10 @@ def _get_current_step_def() -> Optional[StepDefinition]:
             return step_def
     return None
 
-def _handle_step_confirmation() -> None:
+# The handler is now async and accepts the button it needs to control
+async def _handle_step_confirmation(button: ui.button) -> None:
     """The core logic for validating a step and moving to the next."""
-    global _is_handling_confirmation
-    if _is_handling_confirmation: return
-    _is_handling_confirmation = True
+    button.disable()
 
     try:
         user_storage = cast(Dict[str, Any], app.storage.user)
@@ -220,60 +215,64 @@ def _handle_step_confirmation() -> None:
             next_step()
         else:
             for error in new_errors.values():
-                ui.notify(error, type='negative')
+                ui.notification(error, type='negative')
             # Refresh the current step to show the new error messages
             update_step_content.refresh()
     finally:
-        _is_handling_confirmation = False
+        button.enable()
 
 # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 # ++ PDF GENERATION ORCHESTRATION (uses utils.generate_pdf_data_mapping)   ++
 # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-async def create_and_download_pdf() -> None:
+async def create_and_download_pdf(button: ui.button) -> None:
     """
     Orchestrates PDF generation using the utility mapping function
     and handles NiceGUI interactions (storage, notifications, download).
     """
-    user_storage = cast(Dict[str, Any], app.storage.user)
-    if FORM_DATA_KEY not in user_storage or not user_storage[FORM_DATA_KEY]:
-        ui.notify("Chưa có dữ liệu để tạo PDF. Vui lòng điền thông tin.", type='warning')
-        return
-    
-    # Call the utility function to get the mapped data
-    data_to_fill_pdf: Dict[str, Any] = generate_pdf_data_mapping()
 
-    output_pdf_path_str: Optional[str] = None
+    button.disable()
     try:
-        if not os.path.exists(PDF_TEMPLATE_PATH):
-            ui.notify(f"Lỗi nghiêm trọng: Không tìm thấy file mẫu PDF tại '{PDF_TEMPLATE_PATH}'. \
-                      Vui lòng kiểm tra lại cấu hình.", multi_line=True, close_button=True)
+        user_storage = cast(Dict[str, Any], app.storage.user)
+        if FORM_DATA_KEY not in user_storage or not user_storage[FORM_DATA_KEY]:
+            ui.notify("Chưa có dữ liệu để tạo PDF. Vui lòng điền thông tin.", type='warning')
             return
-
-        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmpfile_obj:
-            output_pdf_path_str = tmpfile_obj.name
         
-        fillpdfs.write_fillable_pdf(    # type: ignore
-            input_pdf_path=PDF_TEMPLATE_PATH,
-            output_pdf_path=output_pdf_path_str,
-            data_dict=data_to_fill_pdf,
-            flatten=True
-        )
-        pdf_content_bytes: bytes = Path(output_pdf_path_str).read_bytes()
-        ui.download(src=pdf_content_bytes, filename=PDF_FILENAME)
-        ui.notify("Đã tạo PDF thành công! Kiểm tra mục tải xuống của bạn.", type='positive', close_button=True)
+        # Call the utility function to get the mapped data
+        data_to_fill_pdf: Dict[str, Any] = generate_pdf_data_mapping()
 
-    except FileNotFoundError:
-        ui.notify(f"Lỗi: File mẫu PDF '{PDF_TEMPLATE_PATH}' không tồn tại.", multi_line=True, close_button=True)
-    except Exception as e:
-        print(f"Lỗi nghiêm trọng khi tạo PDF: {e}")
-        import traceback
-        traceback.print_exc()
-        ui.notify(f"Đã xảy ra lỗi khi tạo PDF. Vui lòng thử lại hoặc liên hệ quản trị viên. Chi tiết: {e}", 
-                  type='negative', multi_line=True, close_button=True)
-    finally:
-        if output_pdf_path_str and os.path.exists(output_pdf_path_str):
-            try: os.remove(output_pdf_path_str)
-            except Exception as e_del: print(f"Lỗi khi xóa file tạm '{output_pdf_path_str}': {e_del}")
+        output_pdf_path_str: Optional[str] = None
+        try:
+            if not os.path.exists(PDF_TEMPLATE_PATH):
+                ui.notify(f"Lỗi nghiêm trọng: Không tìm thấy file mẫu PDF tại '{PDF_TEMPLATE_PATH}'. \
+                        Vui lòng kiểm tra lại cấu hình.", multi_line=True, close_button=True)
+                return
+
+            with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmpfile_obj:
+                output_pdf_path_str = tmpfile_obj.name
+            
+            fillpdfs.write_fillable_pdf(    # type: ignore
+                input_pdf_path=PDF_TEMPLATE_PATH,
+                output_pdf_path=output_pdf_path_str,
+                data_dict=data_to_fill_pdf,
+                flatten=True
+            )
+            pdf_content_bytes: bytes = Path(output_pdf_path_str).read_bytes()
+            ui.download(src=pdf_content_bytes, filename=PDF_FILENAME)
+            ui.notify("Đã tạo PDF thành công! Kiểm tra mục tải xuống của bạn.", type='positive', close_button=True)
+
+        except FileNotFoundError:
+            ui.notify(f"Lỗi: File mẫu PDF '{PDF_TEMPLATE_PATH}' không tồn tại.", multi_line=True, close_button=True)
+        except Exception as e:
+            print(f"Lỗi nghiêm trọng khi tạo PDF: {e}")
+            import traceback
+            traceback.print_exc()
+            ui.notify(f"Đã xảy ra lỗi khi tạo PDF. Vui lòng thử lại hoặc liên hệ quản trị viên. Chi tiết: {e}", 
+                    type='negative', multi_line=True, close_button=True)
+        finally:
+            if output_pdf_path_str and os.path.exists(output_pdf_path_str):
+                try: os.remove(output_pdf_path_str)
+                except Exception as e_del: print(f"Lỗi khi xóa file tạm '{output_pdf_path_str}': {e_del}")
+    finally: button.enable()
 
 
 # ===================================================================
@@ -287,7 +286,7 @@ def _render_dataframe_editor(df_conf: DataframeConfig) -> None:
     ui.label(df_conf['field'].label).classes('text-subtitle1 q-mt-md q-mb-sm')
     
     user_storage = cast(Dict[str, Any], app.storage.user)
-    form_data = cast(Dict[str, Any], user_storage[FORM_DATA_KEY])
+    form_data = get_form_data()
     dataframe_key = df_conf['field'].key
     
     @ui.refreshable
@@ -333,19 +332,11 @@ def render_generic_step(step_def: StepDefinition) -> None:
     ui.label(step_def['title']).classes('text-h6 q-mb-xs')
     ui.markdown(step_def['subtitle'])
 
-    user_storage = cast(Dict[str, Any], app.storage.user)
-    current_step_errors: Dict[str, str] = user_storage.get(CURRENT_STEP_ERRORS_KEY, {})
-    form_attempted: bool = user_storage.get(FORM_ATTEMPTED_SUBMISSION_KEY, False)
-
     # --- RENDERER LOGIC ---
     # This function creates the actual fields. We'll call it repeatedly.
     def render_field_list(fields_to_render: List[FieldConfig]) -> None:
         for field_conf in fields_to_render:
-            create_field(
-                field_definition=field_conf['field'],
-                error_message=current_step_errors.get(field_conf['field'].key),
-                form_attempted=form_attempted
-            )
+            create_field(field_definition=field_conf['field'])
 
     # --- LAYOUT DISPATCHER ---
     # Check if a special layout is defined for this step
@@ -377,11 +368,75 @@ def render_generic_step(step_def: StepDefinition) -> None:
             ui.button("← Quay lại", on_click=prev_step).props('flat color=grey')
         else:
             ui.label() # Placeholder to keep alignment
-
-        ui.button("Xác nhận & Tiếp tục →", on_click=lambda: _handle_step_confirmation()) \
-            .props('color=primary unelevated')
         
+        confirm_button = ui.button("Xác nhận & Tiếp tục →").props('color=primary unelevated')
+        confirm_button.on('click', lambda: _handle_step_confirmation(confirm_button))
+        
+def render_emergency_contact_step(step_def: StepDefinition) -> None:
+    """A special renderer for the emergency contact step with clean, reactive logic."""
+    ui.label(step_def['title']).classes('text-h6 q-mb-xs')
+    ui.markdown(step_def['subtitle'])
 
+    form_data = get_form_data()
+
+    # 1. The first field is simple, no changes needed.
+    create_field(field_definition=AppSchema.EMERGENCY_CONTACT_DETAILS)
+
+    # 2. Create the dependent text input. We bind its value directly to the data model.
+    #    This is the key: it will now automatically reflect any change to
+    #    form_data[AppSchema.EMERGENCY_CONTACT_PLACE.key].
+    emergency_place_input = ui.input(
+        label=AppSchema.EMERGENCY_CONTACT_PLACE.label,
+    ).classes('full-width').props('outlined dense').bind_value(
+        form_data, AppSchema.EMERGENCY_CONTACT_PLACE.key
+    )
+    
+    def visibility_transformer(is_checked: bool | None) -> bool:
+        return not bool(is_checked)
+
+    # We still use bind_visibility_from because it's a clean, declarative way to handle visibility.
+    emergency_place_input.bind_visibility_from(
+        form_data, AppSchema.SAME_ADDRESS_AS_REGISTERED.key,
+        backward=visibility_transformer
+    )
+
+    # This function is now our single controller for the logic.
+    # Its ONLY job is to change the data model and UI *properties* (like readonly).
+    # It does NOT call .set_value().
+    def sync_address_state(is_checked: bool) -> None:
+        """Updates the data model based on the checkbox state."""
+        if is_checked:
+            # ACTION: Update the data model.
+            registered_address = form_data.get(AppSchema.REGISTERED_ADDRESS.key, '')
+            form_data[AppSchema.EMERGENCY_CONTACT_PLACE.key] = registered_address
+            # ACTION: Change a UI property to give user feedback.
+            emergency_place_input.props('readonly')
+        else:
+            # ACTION: Update the data model.
+            form_data[AppSchema.EMERGENCY_CONTACT_PLACE.key] = ''
+            # ACTION: Change a UI property.
+            emergency_place_input.props(remove='readonly')
+
+    
+    # 3. Create the checkbox and link its on_change event to our new controller function.
+    ui.checkbox(AppSchema.SAME_ADDRESS_AS_REGISTERED.label) \
+        .bind_value(form_data, AppSchema.SAME_ADDRESS_AS_REGISTERED.key) \
+        .on('update:model-value', lambda e: sync_address_state(e.args[0]))
+
+    # 4. Initialize the state ONCE on load.
+    #    No more fake event objects. We just call the function with the initial data.
+    initial_state_is_checked = form_data.get(AppSchema.SAME_ADDRESS_AS_REGISTERED.key, False)
+    sync_address_state(initial_state_is_checked)
+
+    # Render navigation buttons (no changes here)
+    with ui.row().classes('w-full q-mt-lg justify-between items-center'):
+        if step_def['id'] > 0:
+            ui.button("← Quay lại", on_click=prev_step).props('flat color=grey')
+        else:
+            ui.label()
+
+        confirm_button = ui.button("Xác nhận & Tiếp tục →").props('color=primary unelevated')
+        confirm_button.on('click', lambda: _handle_step_confirmation(confirm_button))
 
 def render_review_step(step_def: 'StepDefinition') -> None:
     """A special renderer for the final review step."""
@@ -390,8 +445,10 @@ def render_review_step(step_def: 'StepDefinition') -> None:
     
     # ... Your detailed review display logic would go here ...
     ui.label("Review UI is under construction.").classes('text-center text-grey')
+    
+    pdf_button = ui.button("Tạo PDF").props('color=green unelevated').classes('q-mt-md q-mb-lg')
+    pdf_button.on('click', lambda: create_and_download_pdf(pdf_button))
 
-    ui.button("Tạo PDF", on_click=create_and_download_pdf).props('color=green unelevated').classes('q-mt-md q-mb-lg')
     with ui.row().classes('w-full justify-start items-center'): 
         ui.button("← Quay lại & Chỉnh sửa", on_click=prev_step).props('flat color=grey')
 
@@ -515,11 +572,13 @@ STEPS_DEFINITION: List[StepDefinition] = [
             },
             # <<< REFINED
             'validators': {
-                'work_from': [required('Bắt buộc'), match_pattern(DATE_MMYYYY_PATTERN, 'Định dạng MM/YYYY')],
-                'work_to': [required('Bắt buộc'), match_pattern(DATE_MMYYYY_PATTERN, 'Định dạng MM/YYYY')],
-                'work_task': [required('Bắt buộc')],
-                'work_unit': [required('Bắt buộc')],
-                'work_role': [required('Bắt buộc')],
+                'work_from': [required('Vui lòng điền thời gian bắt đầu công tác'), 
+                              match_pattern(DATE_MMYYYY_PATTERN, 'Vui lòng điền theo định dạng MM/YYYY')],
+                'work_to': [required('Vui lòng điền thời gian kết thúc công tác'), 
+                            match_pattern(DATE_MMYYYY_PATTERN, 'Vui lòng điền theo định dạng MM/YYYY')],
+                'work_task': [required('Vui lòng điền công việc công tác')],
+                'work_unit': [required('Vui lòng điền đơn vị công tác')],
+                'work_role': [required('Vui lòng điền chức vụ công tác')],
             }
         }]
     },
@@ -582,10 +641,11 @@ STEPS_DEFINITION: List[StepDefinition] = [
             },
             # <<< FIXED
             'validators': {
-                'sibling_name': [required('Bắt buộc')],
-                'sibling_age': [required('Bắt buộc'), match_pattern(NUMERIC_PATTERN, "Phải là số.")],
-                'sibling_job': [required('Bắt buộc')],
-                'sibling_address': [required('Bắt buộc')],
+                'sibling_name': [required('Vui lòng điền tên anh chị em')],
+                'sibling_age': [required('Vui lòng điền tuổi anh chị em'), 
+                                match_pattern(NUMERIC_PATTERN, "Tuổi anh chị em phải là số.")],
+                'sibling_job': [required('Vui lòng điền nghề nghiệp anh chị em')],
+                'sibling_address': [required('Vui lòng điền địa chỉ anh chị em')],
             }
         }]
     },
@@ -609,9 +669,10 @@ STEPS_DEFINITION: List[StepDefinition] = [
             },
             # <<< FIXED
             'validators': {
-                'child_name': [required('Bắt buộc')],
-                'child_age': [required('Bắt buộc'), match_pattern(NUMERIC_PATTERN, "Phải là số.")],
-                'child_job': [required('Bắt buộc')],
+                'child_name': [required('Vui lòng điền tên con cái')],
+                'child_age': [required('Vui lòng điền tuổi con cái'), 
+                              match_pattern(NUMERIC_PATTERN, "Tuổi con cái phải là số.")],
+                'child_job': [required('Vui lòng điền nghề nghiệp con cái')],
             }
         }]
     },
@@ -693,12 +754,15 @@ STEPS_DEFINITION: List[StepDefinition] = [
         'id': 15, 'name': 'emergency_contact', 'needs_clearance': None,
         'title': 'Liên hệ Khẩn cấp',
         'subtitle': 'Cuối cùng, cho chúng tôi biết thông tin người cần báo tin khi khẩn cấp.',
-        'render_func': render_generic_step,
+        'render_func': render_emergency_contact_step,
         'fields': [
             # <<< FIXED
             {'field': AppSchema.EMERGENCY_CONTACT_DETAILS, 'validators': [required("Vui lòng điền tên người cần báo tin.")]},
             {'field': AppSchema.SAME_ADDRESS_AS_REGISTERED, 'validators': []}, 
-            {'field': AppSchema.EMERGENCY_CONTACT_PLACE, 'validators': [required("Vui lòng điền địa chỉ người báo tin.")]},
+            {'field': AppSchema.EMERGENCY_CONTACT_PLACE, 'validators': [
+                lambda value, data: (True, '') if data.get(AppSchema.SAME_ADDRESS_AS_REGISTERED.key) \
+                else required("Vui lòng điền địa chỉ người báo tin.")(value, data)
+            ]},
         ],
         'dataframes': [], 
     },
