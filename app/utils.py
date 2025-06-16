@@ -10,6 +10,8 @@ import para # Assuming para.py exists and might be used for defaults
 # --- Type Aliases ---
 ValidationFuncType: TypeAlias = Callable[[Any], Tuple[bool, str]]
 
+SELECTED_DOSSIER_TYPE_KEY: str = 'selected_dossier_type'
+
 # --- ARCHITECTURAL CORE: SINGLE SOURCE OF TRUTH ---
 @dataclass(frozen=True)
 class FormField:

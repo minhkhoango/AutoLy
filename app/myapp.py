@@ -32,6 +32,7 @@ SALARY_PATTERN: Pattern[str] = re.compile(r'^[\d,.]+$') # Allows for numbers, co
 DATE_MMYYYY_PATTERN: Pattern[str] = re.compile(r'^(0[1-9]|1[0-2])/\d{4}$')
 
 # Import the new, powerful schema and utilities
+from form_data_builder import FormUseCaseType, FormTemplate, FORM_TEMPLATE_REGISTRY
 from utils import (
     AppSchema, FormField,
     STEP_KEY, FORM_DATA_KEY, NEEDS_CLEARANCE_KEY,
@@ -472,21 +473,36 @@ age_validators: List[ValidatorFunc] = [
     match_pattern(NUMERIC_PATTERN, "Tuổi phải là một con số."),
 ]
 
-STEPS_DEFINITION: List[StepDefinition] = [
-    # --- Onboarding ---
-    {
-        'id': 0, 'name': 'start', 'needs_clearance': None,
-        'title': 'Bắt đầu',
-        'subtitle': 'Chào mừng! Hãy cho chúng tôi biết bạn đang chuẩn bị hồ sơ cho loại hình tổ chức nào.',
+# myapp.py
+
+# ... (other code)
+
+# ===================================================================
+# THE APPLICATION BLUEPRINT: EXPLICIT STEP DEFINITIONS
+# ===================================================================
+# This new structure allows instant lookup of any step by its ID.
+# It's the explicit version of the dictionary comprehension.
+
+STEPS_BY_ID: Dict[int, StepDefinition] = {
+    # --- STEP 0: THE NEW DISPATCHER / SELECTOR ---
+    # This is the new entry point. It directs the user down the correct path.
+    0: {
+        'id': 0,
+        'name': 'dossier_selector',
+        'title': 'Chọn Loại Hồ Sơ Cần Chuẩn Bị',
+        'subtitle': 'Bắt đầu bằng cách chọn loại hồ sơ bạn cần. Hệ thống sẽ tự động tạo các bước cần thiết cho bạn.',
         'render_func': render_generic_step,
         'fields': [
-            {'field': AppSchema.STEP0_ANS, 'validators': [required_choice("Vui lòng chọn một mục.")]}
+            # NOTE: You will need to define DOSSIER_TYPE_SELECTOR in your AppSchema (utils.py)
+            # It should be a radio or select field whose options are the DossierType Enum.
+            {'field': AppSchema.DOSSIER_TYPE_SELECTOR, 'validators': [required_choice("Vui lòng chọn một loại hồ sơ.")]}
         ],
-        'dataframes': []
+        'dataframes': [],
+        'needs_clearance': None  # This key is no longer used for path logic but kept for consistency
     },
 
     # --- Core Identity & Contact ---
-    {
+    1: {
         'id': 1, 'name': 'core_identity', 'needs_clearance': None,
         'title': 'Thông tin cá nhân',
         'subtitle': 'Tuyệt vời! Giờ hãy bắt đầu với một vài thông tin định danh cơ bản của bạn.',
@@ -499,39 +515,37 @@ STEPS_DEFINITION: List[StepDefinition] = [
         ],
         'dataframes': []
     },
-    {
+    2: {
         'id': 2, 'name': 'official_id', 'needs_clearance': None,
         'title': 'Giấy tờ tuỳ thân',
         'subtitle': 'Tiếp theo, vui lòng cung cấp thông tin trên Căn cước công dân hoặc CMND của bạn.',
         'render_func': render_generic_step,
         'fields': [
-            {'field': AppSchema.ID_PASSPORT_NUM, 'validators': [required("Vui lòng điền số CMND/CCCD."), 
+            {'field': AppSchema.ID_PASSPORT_NUM, 'validators': [required("Vui lòng điền số CMND/CCCD."),
                                                                 match_pattern(ID_NUMBER_PATTERN, "CMND/CCCD phải có 9 hoặc 12 chữ số.")]},
             {'field': AppSchema.ID_PASSPORT_ISSUE_DATE, 'validators': [required("Vui lòng chọn ngày cấp.")]},
             {'field': AppSchema.ID_PASSPORT_ISSUE_PLACE, 'validators': [required('Vui lòng điền nơi cấp CMND/CCCD.')]},
         ],
         'dataframes': []
     },
-    {
+    3: {
         'id': 3, 'name': 'contact', 'needs_clearance': None,
         'title': 'Thông tin liên lạc chính',
         'subtitle': 'Chúng tôi cần địa chỉ và số điện thoại để có thể liên lạc với bạn khi cần.',
         'render_func': render_generic_step,
         'fields': [
-            # <<< FIXED
             {'field': AppSchema.REGISTERED_ADDRESS, 'validators': [required("Vui lòng điền địa chỉ hộ khẩu.")]},
-            {'field': AppSchema.PHONE, 'validators': [required('Vui lòng điền số điện thoại.'), 
+            {'field': AppSchema.PHONE, 'validators': [required('Vui lòng điền số điện thoại.'),
                                                       match_pattern(PHONE_PATTERN, "Số điện thoại phải có 10 chữ số, bắt đầu bằng 0.")]},
         ],
         'dataframes': []
     },
-    {
+    4: {
         'id': 4, 'name': 'origin_info', 'needs_clearance': True,
         'title': 'Nguồn gốc & Tôn giáo',
         'subtitle': 'Hãy chia sẻ một chút về dân tộc và tôn giáo của bạn.',
         'render_func': render_generic_step,
         'fields': [
-            # <<< FIXED
             {'field': AppSchema.ETHNICITY, 'validators': [required_choice("Vui lòng chọn dân tộc.")]},
             {'field': AppSchema.RELIGION, 'validators': [required_choice("Vui lòng chọn tôn giáo.")]},
             {'field': AppSchema.PLACE_OF_ORIGIN, 'validators': [required("Vui lòng điền nguyên quán.")]},
@@ -540,22 +554,21 @@ STEPS_DEFINITION: List[StepDefinition] = [
     },
 
     # --- Professional Background ---
-    {
+    5: {
         'id': 5, 'name': 'education', 'needs_clearance': None,
         'title': 'Học vấn & Chuyên môn',
         'subtitle': 'Quá trình học tập đã định hình nên con người bạn.',
         'render_func': render_generic_step,
         'fields': [
-            # <<< REFINED
             {'field': AppSchema.EDUCATION_HIGH_SCHOOL, 'validators': [required_choice("Vui lòng điền lộ trình học cấp ba.")]},
             {'field': AppSchema.EDUCATION_HIGHEST, 'validators': [required_choice("Vui lòng chọn bằng cấp cao nhất.")]},
-            {'field': AppSchema.EDUCATION_MAJOR, 'validators': []}, # Optional
+            {'field': AppSchema.EDUCATION_MAJOR, 'validators': []},
             {'field': AppSchema.EDUCATION_FORMAT, 'validators': [required_choice("Vui lòng chọn loại hình đào tạo.")]},
-            {'field': AppSchema.FOREIGN_LANGUAGE, 'validators': []}, # Optional
+            {'field': AppSchema.FOREIGN_LANGUAGE, 'validators': []},
         ],
         'dataframes': []
     },
-    {
+    6: {
         'id': 6, 'name': 'work_history', 'needs_clearance': None,
         'title': 'Quá trình Công tác',
         'subtitle': 'Liệt kê quá trình làm việc của bạn từ trước đến nay, bắt đầu từ gần nhất.',
@@ -570,11 +583,10 @@ STEPS_DEFINITION: List[StepDefinition] = [
                 'work_unit': {'label': 'Đơn vị'},
                 'work_role': {'label': 'Chức vụ'}
             },
-            # <<< REFINED
             'validators': {
-                'work_from': [required('Vui lòng điền thời gian bắt đầu công tác'), 
+                'work_from': [required('Vui lòng điền thời gian bắt đầu công tác'),
                               match_pattern(DATE_MMYYYY_PATTERN, 'Vui lòng điền theo định dạng MM/YYYY')],
-                'work_to': [required('Vui lòng điền thời gian kết thúc công tác'), 
+                'work_to': [required('Vui lòng điền thời gian kết thúc công tác'),
                             match_pattern(DATE_MMYYYY_PATTERN, 'Vui lòng điền theo định dạng MM/YYYY')],
                 'work_task': [required('Vui lòng điền công việc công tác')],
                 'work_unit': [required('Vui lòng điền đơn vị công tác')],
@@ -582,50 +594,41 @@ STEPS_DEFINITION: List[StepDefinition] = [
             }
         }]
     },
-    {
+    7: {
         'id': 7, 'name': 'awards', 'needs_clearance': None,
         'title': 'Khen thưởng & Kỷ luật',
         'subtitle': 'Nếu có bất kỳ khen thưởng hoặc kỷ luật nào đáng chú ý, hãy liệt kê ở đây.',
         'render_func': render_generic_step,
         'fields': [
-            # <<< FIXED
             {'field': AppSchema.AWARD, 'validators': [required_choice("Vui lòng chọn khen thưởng.")]},
             {'field': AppSchema.DISCIPLINE, 'validators': []},
         ],
         'dataframes': []
     },
-    
+
     # --- Family Background ---
-    {
+    8: {
         'id': 8, 'name': 'parents_basic', 'needs_clearance': None,
         'title': 'Thông tin Bố Mẹ',
         'subtitle': 'Phần này dành cho thông tin cơ bản về bố và mẹ của bạn.',
         'render_func': render_generic_step,
-        'fields': [],
-        'dataframes': [],
+        'fields': [], 'dataframes': [],
         'layout': {
-            'type': 'tabs',
-            'tabs': {
-                'dad_panel': {
-                    'label': 'Thông tin cơ bản về bố',
-                    'fields': [
+            'type': 'tabs', 'tabs': {
+                'dad_panel': { 'label': 'Thông tin cơ bản về bố', 'fields': [
                         {'field': AppSchema.DAD_NAME, 'validators': name_validators},
                         {'field': AppSchema.DAD_AGE, 'validators': age_validators},
                         {'field': AppSchema.DAD_JOB, 'validators': [required("Vui lòng điền nghề nghiệp của Bố.")]},
-                    ]
-                },
-                'mom_panel': {
-                    'label': 'Thông tin cơ bản về mẹ',
-                    'fields': [
+                ]},
+                'mom_panel': { 'label': 'Thông tin cơ bản về mẹ', 'fields': [
                         {'field': AppSchema.MOM_NAME, 'validators': name_validators},
                         {'field': AppSchema.MOM_AGE, 'validators': age_validators},
                         {'field': AppSchema.MOM_JOB, 'validators': [required("Vui lòng điền nghề nghiệp của Mẹ.")]},
-                    ]
-                }
+                ]}
             }
         }
     },
-    {
+    9: {
         'id': 9, 'name': 'siblings', 'needs_clearance': True,
         'title': 'Anh Chị Em ruột',
         'subtitle': 'Vui lòng kê khai thông tin về các anh, chị, em ruột của bạn (nếu có).',
@@ -639,24 +642,21 @@ STEPS_DEFINITION: List[StepDefinition] = [
                 'sibling_job': {'label': 'Nghề nghiệp'},
                 'sibling_address': {'label': 'Nơi ở', 'classes': 'col-3'}
             },
-            # <<< FIXED
             'validators': {
                 'sibling_name': [required('Vui lòng điền tên anh chị em')],
-                'sibling_age': [required('Vui lòng điền tuổi anh chị em'), 
-                                match_pattern(NUMERIC_PATTERN, "Tuổi anh chị em phải là số.")],
+                'sibling_age': [required('Vui lòng điền tuổi anh chị em'), match_pattern(NUMERIC_PATTERN, "Tuổi anh chị em phải là số.")],
                 'sibling_job': [required('Vui lòng điền nghề nghiệp anh chị em')],
                 'sibling_address': [required('Vui lòng điền địa chỉ anh chị em')],
             }
         }]
     },
-    {
+    10: {
         'id': 10, 'name': 'spouse_and_children', 'needs_clearance': True,
         'title': 'Vợ/Chồng & Các con',
         'subtitle': 'Hãy cung cấp thông tin về gia đình nhỏ của bạn (nếu có).',
         'render_func': render_generic_step,
         'fields': [
-            # Optional fields are correct with '[]'
-            {'field': AppSchema.SPOUSE_NAME, 'validators': []}, 
+            {'field': AppSchema.SPOUSE_NAME, 'validators': []},
             {'field': AppSchema.SPOUSE_AGE, 'validators': []},
             {'field': AppSchema.SPOUSE_JOB, 'validators': []},
         ],
@@ -667,115 +667,100 @@ STEPS_DEFINITION: List[StepDefinition] = [
                 'child_age': {'label': 'Tuổi con', 'classes': 'col-2'},
                 'child_job': {'label': 'Học tập/Công tác'}
             },
-            # <<< FIXED
             'validators': {
                 'child_name': [required('Vui lòng điền tên con cái')],
-                'child_age': [required('Vui lòng điền tuổi con cái'), 
-                              match_pattern(NUMERIC_PATTERN, "Tuổi con cái phải là số.")],
+                'child_age': [required('Vui lòng điền tuổi con cái'), match_pattern(NUMERIC_PATTERN, "Tuổi con cái phải là số.")],
                 'child_job': [required('Vui lòng điền nghề nghiệp con cái')],
             }
         }]
     },
 
     # --- GOVERNMENT/MILITARY CLEARANCE SECTION ---
-    {
+    11: {
         'id': 11, 'name': 'gov_political_class', 'needs_clearance': True,
         'title': 'Kê khai Thành phần',
         'subtitle': 'Bước này là yêu cầu riêng cho hồ sơ Nhà nước.',
         'render_func': render_generic_step,
         'fields': [
-            # <<< FIXED
             {'field': AppSchema.SOCIAL_STANDING, 'validators': [required_choice("Vui lòng chọn thành phần bản thân.")]},
             {'field': AppSchema.FAMILY_STANDING, 'validators': [required_choice("Vui lòng chọn thành phần gia đình.")]},
         ],
         'dataframes': []
     },
-    {
+    12: {
         'id': 12, 'name': 'gov_affiliation', 'needs_clearance': True,
-        'title': 'Thông tin Đảng/Đoàn & Lương', 
+        'title': 'Thông tin Đảng/Đoàn & Lương',
         'subtitle': 'Cung cấp thông tin về quá trình tham gia Đoàn, Đảng và mức lương.',
         'render_func': render_generic_step,
         'fields': [
             {'field': AppSchema.YOUTH_DATE, 'validators': []},
             {'field': AppSchema.PARTY_DATE, 'validators': []},
-            # <<< REFINED
-            {'field': AppSchema.CURRENT_SALARY, 'validators': [required("Vui lòng điền mức lương."), 
+            {'field': AppSchema.CURRENT_SALARY, 'validators': [required("Vui lòng điền mức lương."),
                                                                match_pattern(SALARY_PATTERN, "Lương phải là một con số.")]},
         ],
         'dataframes': []
     },
-    {
+    13: {
         'id': 13, 'name': 'gov_parents_history', 'needs_clearance': True,
         'title': 'Lịch sử Gia đình (chi tiết)',
         'subtitle': 'Để phục vụ công tác thẩm tra, vui lòng kê khai chi tiết quá trình hoạt động của bố mẹ qua các thời kỳ lịch sử.',
-        'render_func': render_generic_step, # No longer needs a custom renderer
-        'fields': [],
-        'dataframes': [],
+        'render_func': render_generic_step,
+        'fields': [], 'dataframes': [],
         'layout': {
-            'type': 'tabs',
-            'tabs': {
-                'dad_panel': {
-                    'label': 'Thông tin Bố',
-                    'fields': [
+            'type': 'tabs', 'tabs': {
+                'dad_panel': { 'label': 'Thông tin Bố', 'fields': [
                         {'field': AppSchema.DAD_PRE_AUGUST_REVOLUTION, 'validators': [required("Vui lòng điền hoạt động của Bố trước CM tháng 8.")]},
                         {'field': AppSchema.DAD_DURING_FRENCH_WAR, 'validators': [required("Vui lòng điền hoạt động của Bố trong kháng chiến chống Pháp.")]},
                         {'field': AppSchema.DAD_FROM_1955_PRESENT, 'validators': [required("Vui lòng điền hoạt động của Bố từ 1955 đến nay.")]},
-                    ]
-                },
-                'mom_panel': {
-                    'label': 'Thông tin Mẹ',
-                    'fields': [
+                ]},
+                'mom_panel': { 'label': 'Thông tin Mẹ', 'fields': [
                         {'field': AppSchema.MOM_PRE_AUGUST_REVOLUTION, 'validators': [required("Vui lòng điền hoạt động của Mẹ trước CM tháng 8.")]},
                         {'field': AppSchema.MOM_DURING_FRENCH_WAR, 'validators': [required("Vui lòng điền hoạt động của Mẹ trong kháng chiến chống Pháp.")]},
                         {'field': AppSchema.MOM_FROM_1955_PRESENT, 'validators': [required("Vui lòng điền hoạt động của Mẹ từ 1955 đến nay.")]},
-                    ]
-                }
+                ]}
             }
         }
     },
-    
+
     # --- Miscellaneous & Finalization ---
-    {
+    14: {
         'id': 14, 'name': 'health_and_military', 'needs_clearance': True,
         'title': 'Sức khỏe & Quân sự',
         'subtitle': 'Một vài thông tin cuối về sức khoẻ và nghĩa vụ quân sự (nếu có).',
         'render_func': render_generic_step,
         'fields': [
-            # <<< REFINED: No more reusing 'validate_age'!
             {'field': AppSchema.HEALTH, 'validators': [required("Vui lòng điền tình trạng sức khỏe.")]},
             {'field': AppSchema.HEIGHT, 'validators': [required("Điền chiều cao (cm)."), match_pattern(NUMERIC_PATTERN, "Phải là số.")]},
             {'field': AppSchema.WEIGHT, 'validators': [required("Điền cân nặng (kg)."), match_pattern(NUMERIC_PATTERN, "Phải là số.")]},
-            {'field': AppSchema.JOIN_ARMY_DATE, 'validators': []}, 
+            {'field': AppSchema.JOIN_ARMY_DATE, 'validators': []},
             {'field': AppSchema.LEAVE_ARMY_DATE, 'validators': []},
         ],
         'dataframes': [],
     },
-    {
+    15: {
         'id': 15, 'name': 'emergency_contact', 'needs_clearance': None,
         'title': 'Liên hệ Khẩn cấp',
         'subtitle': 'Cuối cùng, cho chúng tôi biết thông tin người cần báo tin khi khẩn cấp.',
         'render_func': render_emergency_contact_step,
         'fields': [
-            # <<< FIXED
             {'field': AppSchema.EMERGENCY_CONTACT_DETAILS, 'validators': [required("Vui lòng điền tên người cần báo tin.")]},
-            {'field': AppSchema.SAME_ADDRESS_AS_REGISTERED, 'validators': []}, 
+            {'field': AppSchema.SAME_ADDRESS_AS_REGISTERED, 'validators': []},
             {'field': AppSchema.EMERGENCY_CONTACT_PLACE, 'validators': [
-                lambda value, data: (True, '') if data.get(AppSchema.SAME_ADDRESS_AS_REGISTERED.key) \
+                lambda value, data: (True, '') if data.get(AppSchema.SAME_ADDRESS_AS_REGISTERED.key)
                 else required("Vui lòng điền địa chỉ người báo tin.")(value, data)
             ]},
         ],
-        'dataframes': [], 
+        'dataframes': [],
     },
-    # --- Final Step ---
-    {
+    16: {
         'id': 16, 'name': 'review', 'needs_clearance': None,
         'title': 'Xem lại & Hoàn tất',
         'subtitle': 'Kiểm tra lại toàn bộ thông tin. Nếu chính xác, bạn có thể tạo file PDF.',
         'render_func': render_review_step,
-        'fields': [], 
+        'fields': [],
         'dataframes': []
     },
-]
+}
 
 # ===================================================================
 # 5. NAVIGATION ENGINE & MAIN UI CONTROLLER
