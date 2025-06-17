@@ -2,6 +2,7 @@
 from __future__ import annotations
 import re
 from typing import Any, Callable, Dict, Optional, Pattern, Tuple
+from datetime import date, datetime
 
 # --- Type Aliases ---
 ValidationResult = Tuple[bool, str]
@@ -15,6 +16,7 @@ EMAIL_PATTERN: Pattern[str] = re.compile(r'^[^@]+@[^@]+\.[^@]+$')
 ID_NUMBER_PATTERN: Pattern[str] = re.compile(r'^(?:\d{9}|\d{12})$')
 YEAR_PATTERN: Pattern[str] = re.compile(r'^\d{4}$')
 NUMERIC_PATTERN: Pattern[str] = re.compile(r'^\d+$')
+DATE_FORMAT_STORAGE: str = '%Y-%m-%d' 
 
 # ===================================================================
 # GENERIC VALIDATOR GENERATORS (Our Reusable Building Blocks)
@@ -52,12 +54,47 @@ def match_pattern(pattern: Pattern[str], message: str) -> ValidatorFunc:
         return True, ""
     return validator
 
-def min_length(length: int, message: str) -> ValidatorFunc:
-    """Ensures a string has a minimum length."""
-    def validator(value: Optional[Any], form_data: Dict[str, Any]) -> ValidationResult:
-        if not value or not isinstance(value, str):
+def is_within_date_range(
+    min_date: Optional[date] = date(1900, 1, 1), max_date: Optional[date] = date.today(),
+    message: str = "Ngày chọn nằm ngoài khoảng cho phép."
+) -> ValidatorFunc:
+    """Ensures a date string is within the specified min/max range."""
+    def validator(value: Optional[str], form_data: Dict[str, Any]) -> ValidationResult:
+        if not value:
+            return True, ''
+        try:
+            dt_object = datetime.strptime(value, DATE_FORMAT_STORAGE).date()
+            if (min_date and dt_object < min_date) or \
+               (max_date and dt_object > max_date):
+                return False, message
+        except ValueError:
+            # This could happen if the date string is malformed, though your sync logic should prevent it.
+            return False, "Định dạng ngày không hợp lệ."
+        return True, ''
+    return validator
+
+def is_date_after(other_field_key: str, message: str) -> ValidatorFunc:
+    """
+    Validates that a MM/YYYY date in one field comes after a MM/YYYY date
+    in another field within the same row of data.
+    """
+    def validator(value: Optional[str], row_data: Dict[str, Any]) -> ValidationResult:
+        # `value` is the 'work_to' date
+        other_value = row_data.get(other_field_key)
+
+        # If either value is missing or not in the right format, another validator will catch it.
+        if not value or not other_value or '/' not in value or '/' not in other_value:
             return True, ""
-        if len(value.strip()) < length:
-            return False, message
+        
+        try:
+            # Convert MM/YYYY to a comparable format 
+            to_month, to_year = map(int, value.split('/'))
+            from_month, from_year = map(int, other_value.split('/'))
+
+            if to_year < from_year or (to_year==from_year and to_month < from_month):
+                return False, message
+        except (ValueError, IndexError):
+            return True, "" # Let the pattern validator handle format errors.
+        
         return True, ""
     return validator

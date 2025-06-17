@@ -188,16 +188,6 @@ work_position: List[str] = [
 ]
 
 awards_titles: List[str] = [                           
-    "Chưa có",                    # None / Not yet
-    "Cử nhân",                    # Bachelor
-    "Kỹ sư",                      # Engineer
-    "Bác sĩ",                     # Doctor (Medical)
-    "Thạc sĩ",                    # Master
-    "Tiến sĩ",                    # PhD/Doctorate
-    "Tiến sĩ khoa học",           # Doctor of Science
-    "Phó giáo sư",                # Associate Professor
-    "Giáo sư",                    # Professor
-
     # State Honors
     "Nhà giáo ưu tú",             # Distinguished Teacher
     "Nhà giáo nhân dân",          # People's Teacher

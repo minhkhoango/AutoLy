@@ -10,10 +10,10 @@ from typing import List, Dict, TypedDict
 
 class FormUseCaseType(Enum):
     PRIVATE_SECTOR = auto()
-    STATE_EMPLOYEE = auto()          # Viên chứ
-    STATE_CIVIL_SERVANT = auto()     # Công chức
-    MINISTRY_DEFENSE = auto()        # Bộ Quốc phòng (BQP)
-    MINISTRY_PUBLIC_SECURITY = auto()# Bộ Công an (BCA)
+    # STATE_EMPLOYEE = auto()          # POSTPONED
+    # STATE_CIVIL_SERVANT = auto()     # POSTPONED
+    # MINISTRY_DEFENSE = auto()        # POSTPONED
+    # MINISTRY_PUBLIC_SECURITY = auto()# POSTPONED
 
 # ===================================================================
 # 2. DEFINE THE "BLUEPRINT" FOR EACH PRODUCT
@@ -47,32 +47,6 @@ FORM_TEMPLATE_REGISTRY: Dict[FormUseCaseType, FormTemplate] = {
             9, 10,
             # Emergency Contact & Review
             15, 16
-        ],
-    },
-    FormUseCaseType.STATE_EMPLOYEE: {
-        'name': "Hồ sơ Viên chức",
-        'description': "Hồ sơ chuẩn theo quy định cho viên chức, sử dụng Mẫu HS02-VC/BNV.",
-        'gov_form_code': "Mẫu HS02-VC/BNV (Thông tư 07/2019/TT-BNV)",
-        'step_sequence': [
-            # Core Info
-            1, 2, 3, 4, 5, 6, 7,
-            # Full Family & Political Info
-            8, 9, 10, 11, 12, 13, 14,
-            # Emergency Contact & Review
-            15, 16
-        ],
-    },
-    FormUseCaseType.MINISTRY_PUBLIC_SECURITY: {
-        'name': "Hồ sơ Bộ Công an (BCA)",
-        'description': "Hồ sơ thẩm tra lý lịch chi tiết và bắt buộc theo Mẫu A-BCA(X01)-2020.",
-        # The BCA form is non-negotiable and requires exhaustive, multi-generational data.
-        'gov_form_code': "Mẫu A-BCA(X01)-2020",
-        'step_sequence': [
-            # Note: This is a simplified representation. A real BCA implementation
-            # would require many NEW, highly detailed steps not in your current list.
-            # For now, we assume it requires all existing steps as a baseline.
-            1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16
-            # In reality, you'd add steps 17 (Spouse's Family), 18 (Grandparents), etc.
         ],
     },
 }

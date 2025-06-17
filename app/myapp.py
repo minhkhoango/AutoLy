@@ -11,7 +11,7 @@ from typing import (
 # Assuming validation.py and para.py are in the same directory or accessible in PYTHONPATH
 from validation import (
     ValidatorFunc,
-    required, required_choice, match_pattern, min_length
+    required, required_choice, match_pattern, is_within_date_range, is_date_after
 )
 from fillpdf import fillpdfs  # type: ignore[import]
 import tempfile
@@ -21,21 +21,11 @@ from typing import Pattern
 from typing_extensions import NotRequired
 import re
 
-# --- Patterns ---
-FULL_NAME_PATTERN: Pattern[str] = re.compile(r'^[A-ZÀÁẠẢÃÂẦẤẬẨẪĂẰẮẶẲẴĐÈÉẸẺẼÊỀẾỆỂỄÌÍỊỈĨÒÓỌỎÕÔỒỐỘỔỖƠỜỚỢỞỠÙÚỤỦŨƯỪỨỰỬỮỲÝỴỶỸ ]+$')
-PHONE_PATTERN: Pattern[str] = re.compile(r'^0\d{9}$')
-ID_NUMBER_PATTERN: Pattern[str] = re.compile(r'^(?:\d{9}|\d{12})$')
-NUMERIC_PATTERN: Pattern[str] = re.compile(r'^\d+$')
-# --- NEW/REFINED PATTERNS ---
-EDUCATION_HS_PATTERN: Pattern[str] = re.compile(r'^\d{1,2}/\d{2}$')
-SALARY_PATTERN: Pattern[str] = re.compile(r'^[\d,.]+$') # Allows for numbers, commas, and dots
-DATE_MMYYYY_PATTERN: Pattern[str] = re.compile(r'^(0[1-9]|1[0-2])/\d{4}$')
-
 # Import the new, powerful schema and utilities
 from form_data_builder import FormUseCaseType, FormTemplate, FORM_TEMPLATE_REGISTRY
 from utils import (
     AppSchema, FormField,
-    STEP_KEY, FORM_DATA_KEY, NEEDS_CLEARANCE_KEY,
+    STEP_KEY, FORM_DATA_KEY, SELECTED_USE_CASE_KEY, # <-- ADD THIS
     FORM_ATTEMPTED_SUBMISSION_KEY, CURRENT_STEP_ERRORS_KEY,
     PDF_TEMPLATE_PATH, PDF_FILENAME,
     create_field, initialize_form_data, generate_pdf_data_mapping, get_form_data
@@ -171,14 +161,6 @@ def execute_step_validators(
 # ===================================================================
 # 3. CORE LOGIC & NAVIGATION
 # ===================================================================
-def _get_current_step_def() -> Optional[StepDefinition]:
-    """Retrieves the full definition dictionary for the current step."""
-    user_storage = cast(Dict[str, Any], app.storage.user)
-    current_step_id: int = user_storage.get(STEP_KEY, 0)
-    for step_def in STEPS_DEFINITION:
-        if step_def['id'] == current_step_id:
-            return step_def
-    return None
 
 # The handler is now async and accepts the button it needs to control
 async def _handle_step_confirmation(button: ui.button) -> None:
@@ -187,44 +169,50 @@ async def _handle_step_confirmation(button: ui.button) -> None:
 
     try:
         user_storage = cast(Dict[str, Any], app.storage.user)
-        current_step_def = _get_current_step_def()
+        current_step_id = user_storage.get(STEP_KEY, 0)
+        current_step_def = STEPS_BY_ID.get(current_step_id)
+        
         if not current_step_def: return
 
         # --- Build the list of validators dynamically from the step definition ---
         validators_for_step: List[ValidationEntry] = []
-        for field_conf in current_step_def.get('fields', []):
-            validators_for_step.append((field_conf['field'].key, field_conf['validators']))
+        def collect_validators(fields_config: List[FieldConfig]):
+            for field_conf in fields_config:
+                validators_for_step.append((field_conf['field'].key, field_conf['validators']))
+
+        if (layout := current_step_def.get('layout')) and layout.get('type') == 'tabs':
+            if (tabs := layout.get('tabs')):
+                for panel_info in tabs.values():
+                    collect_validators(panel_info.get('fields', []))
+        else:
+            collect_validators(current_step_def.get('fields', []))
 
         for df_conf in current_step_def.get('dataframes', []):
             validators_for_step.append((df_conf['field'].key, df_conf['validators']))
         # ---
 
-        current_form_data = user_storage.get(FORM_DATA_KEY, {})
+        current_form_data = get_form_data()
         all_valid, new_errors = execute_step_validators(validators_for_step, current_form_data)
 
         user_storage[FORM_ATTEMPTED_SUBMISSION_KEY] = True # Always set to true on click
         user_storage[CURRENT_STEP_ERRORS_KEY] = new_errors
 
         if all_valid:
-            # check if we just finished step 0
-            current_step_id = user_storage.get(STEP_KEY, 0)
             if current_step_id == 0:
-                needs_clearance = (current_form_data.get(AppSchema.STEP0_ANS.key) == 'Có')
-                user_storage[NEEDS_CLEARANCE_KEY] = needs_clearance
-
+                selected_use_case_name = current_form_data.get(AppSchema.FORM_TEMPLATE_SELECTOR.key)
+    
+                # Store the string name directly. No conversion. No confusion.
+                user_storage[SELECTED_USE_CASE_KEY] = selected_use_case_name
+            
             ui.notify("Thông tin hợp lệ!", type='positive')
             next_step()
         else:
             for error in new_errors.values():
                 ui.notification(error, type='negative')
-            # Refresh the current step to show the new error messages
             update_step_content.refresh()
     finally:
         button.enable()
 
-# +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-# ++ PDF GENERATION ORCHESTRATION (uses utils.generate_pdf_data_mapping)   ++
-# +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 async def create_and_download_pdf(button: ui.button) -> None:
     """
     Orchestrates PDF generation using the utility mapping function
@@ -277,11 +265,8 @@ async def create_and_download_pdf(button: ui.button) -> None:
 
 
 # ===================================================================
-# 3. THE NEW, GENERIC UI RENDERING ENGINE
+# 4. UI RENDERING ENGINE
 # ===================================================================
-
-# --- Special Component Renderers ---
-# For complex UI parts like the dynamic list editor.
 def _render_dataframe_editor(df_conf: DataframeConfig) -> None:
     """Renders a dynamic list editor for things like Work History, Siblings, etc."""
     ui.label(df_conf['field'].label).classes('text-subtitle1 q-mt-md q-mb-sm')
@@ -333,19 +318,11 @@ def render_generic_step(step_def: StepDefinition) -> None:
     ui.label(step_def['title']).classes('text-h6 q-mb-xs')
     ui.markdown(step_def['subtitle'])
 
-    # --- RENDERER LOGIC ---
-    # This function creates the actual fields. We'll call it repeatedly.
     def render_field_list(fields_to_render: List[FieldConfig]) -> None:
         for field_conf in fields_to_render:
             create_field(field_definition=field_conf['field'])
 
-    # --- LAYOUT DISPATCHER ---
-    # Check if a special layout is defined for this step
     if (layout_data := step_def.get('layout')) and layout_data.get('type') == 'tabs':
-        # BRANCH 1: Render a tabbed layout
-        # The walrus operator (:=) assigns the result of .get() to layout_data.
-        # Now, inside this block, Pylance knows layout_data is a valid dict.
-
         if tab_data := layout_data.get('tabs'):
             with ui.tabs().classes('w-fill') as tabs:
                 for panel_key, panel_info in tab_data.items():
@@ -383,9 +360,6 @@ def render_emergency_contact_step(step_def: StepDefinition) -> None:
     # 1. The first field is simple, no changes needed.
     create_field(field_definition=AppSchema.EMERGENCY_CONTACT_DETAILS)
 
-    # 2. Create the dependent text input. We bind its value directly to the data model.
-    #    This is the key: it will now automatically reflect any change to
-    #    form_data[AppSchema.EMERGENCY_CONTACT_PLACE.key].
     emergency_place_input = ui.input(
         label=AppSchema.EMERGENCY_CONTACT_PLACE.label,
     ).classes('full-width').props('outlined dense').bind_value(
@@ -454,18 +428,19 @@ def render_review_step(step_def: 'StepDefinition') -> None:
         ui.button("← Quay lại & Chỉnh sửa", on_click=prev_step).props('flat color=grey')
 
 # ===================================================================
-# 4. DEFINE THE BLUEPRINT
-# ++ NEW "ROBO-TAX" APPLICATION FLOW BLUEPRINT ++
+# 5. DEFINE THE BLUEPRINT & NAVIGATION ENGINE
 # ===================================================================
-# ===================================================================
-# 4. THE APPLICATION BLUEPRINT (NOW MORE POWERFUL)
-# ===================================================================
+# --- Patterns ---
+FULL_NAME_PATTERN: Pattern[str] = re.compile(r'^[A-ZÀÁẠẢÃÂẦẤẬẨẪĂẰẮẶẲẴĐÈÉẸẺẼÊỀẾỆỂỄÌÍỊỈĨÒÓỌỎÕÔỒỐỘỔỖƠỜỚỢỞỠÙÚỤỦŨƯỪỨỰỬỮỲÝỴỶỸ ]+$')
+PHONE_PATTERN: Pattern[str] = re.compile(r'^0\d{9}$')
+ID_NUMBER_PATTERN: Pattern[str] = re.compile(r'^(?:\d{9}|\d{12})$')
+NUMERIC_PATTERN: Pattern[str] = re.compile(r'^\d+$')
+SALARY_PATTERN: Pattern[str] = re.compile(r"^\d+$|^\d{1,3}(?:[.,]\d{3})*$")
+DATE_MMYYYY_PATTERN: Pattern[str] = re.compile(r'^(0[1-9]|1[0-2])/\d{4}$')
 
 # --- Smart, Reusable Validator Lists ---
-# For things that are truly identical, like names and ages of people
 name_validators: List[ValidatorFunc] = [
     required("Vui lòng điền đầy đủ họ và tên."),
-    min_length(2, "Họ và tên quá ngắn."),
     match_pattern(FULL_NAME_PATTERN, "Họ và tên phải viết hoa, không chứa số hoặc ký tự đặc biệt."),
 ]
 age_validators: List[ValidatorFunc] = [
@@ -473,366 +448,211 @@ age_validators: List[ValidatorFunc] = [
     match_pattern(NUMERIC_PATTERN, "Tuổi phải là một con số."),
 ]
 
-# myapp.py
-
-# ... (other code)
-
-# ===================================================================
-# THE APPLICATION BLUEPRINT: EXPLICIT STEP DEFINITIONS
-# ===================================================================
-# This new structure allows instant lookup of any step by its ID.
-# It's the explicit version of the dictionary comprehension.
-
 STEPS_BY_ID: Dict[int, StepDefinition] = {
-    # --- STEP 0: THE NEW DISPATCHER / SELECTOR ---
-    # This is the new entry point. It directs the user down the correct path.
     0: {
-        'id': 0,
-        'name': 'dossier_selector',
+        'id': 0, 'name': 'dossier_selector',
         'title': 'Chọn Loại Hồ Sơ Cần Chuẩn Bị',
         'subtitle': 'Bắt đầu bằng cách chọn loại hồ sơ bạn cần. Hệ thống sẽ tự động tạo các bước cần thiết cho bạn.',
         'render_func': render_generic_step,
-        'fields': [
-            # NOTE: You will need to define DOSSIER_TYPE_SELECTOR in your AppSchema (utils.py)
-            # It should be a radio or select field whose options are the DossierType Enum.
-            {'field': AppSchema.DOSSIER_TYPE_SELECTOR, 'validators': [required_choice("Vui lòng chọn một loại hồ sơ.")]}
-        ],
-        'dataframes': [],
-        'needs_clearance': None  # This key is no longer used for path logic but kept for consistency
+        'fields': [{'field': AppSchema.FORM_TEMPLATE_SELECTOR, 'validators': [required_choice("Vui lòng chọn một loại hồ sơ.")]}],
+        'dataframes': [], 'needs_clearance': None
     },
-
-    # --- Core Identity & Contact ---
     1: {
-        'id': 1, 'name': 'core_identity', 'needs_clearance': None,
-        'title': 'Thông tin cá nhân',
-        'subtitle': 'Tuyệt vời! Giờ hãy bắt đầu với một vài thông tin định danh cơ bản của bạn.',
-        'render_func': render_generic_step,
+        'id': 1, 'name': 'core_identity', 'title': 'Thông tin cá nhân', 'subtitle': 'Bắt đầu với thông tin định danh cơ bản của bạn.',
+        'render_func': render_generic_step, 'needs_clearance': None,
         'fields': [
             {'field': AppSchema.FULL_NAME, 'validators': name_validators},
             {'field': AppSchema.GENDER, 'validators': [required_choice("Vui lòng chọn giới tính.")]},
-            {'field': AppSchema.DOB, 'validators': [required('Vui lòng chọn ngày sinh.')]},
+            {'field': AppSchema.DOB, 'validators': [required('Vui lòng chọn ngày sinh.'),
+                                                    is_within_date_range(message="Ngày sinh phải trong khoảng từ 01/01/1900 đến hôm nay.")]},
             {'field': AppSchema.BIRTH_PLACE, 'validators': [required("Vui lòng điền nơi sinh.")]},
-        ],
-        'dataframes': []
+        ], 'dataframes': []
     },
     2: {
-        'id': 2, 'name': 'official_id', 'needs_clearance': None,
-        'title': 'Giấy tờ tuỳ thân',
-        'subtitle': 'Tiếp theo, vui lòng cung cấp thông tin trên Căn cước công dân hoặc CMND của bạn.',
-        'render_func': render_generic_step,
+        'id': 2, 'name': 'official_id', 'title': 'Giấy tờ tuỳ thân', 'subtitle': 'Cung cấp thông tin trên Căn cước công dân hoặc CMND của bạn.',
+        'render_func': render_generic_step, 'needs_clearance': None,
         'fields': [
-            {'field': AppSchema.ID_PASSPORT_NUM, 'validators': [required("Vui lòng điền số CMND/CCCD."),
-                                                                match_pattern(ID_NUMBER_PATTERN, "CMND/CCCD phải có 9 hoặc 12 chữ số.")]},
+            {'field': AppSchema.ID_PASSPORT_NUM, 'validators': [required("Vui lòng điền số CMND/CCCD."), match_pattern(ID_NUMBER_PATTERN, "CMND/CCCD phải có 9 hoặc 12 chữ số.")]},
             {'field': AppSchema.ID_PASSPORT_ISSUE_DATE, 'validators': [required("Vui lòng chọn ngày cấp.")]},
             {'field': AppSchema.ID_PASSPORT_ISSUE_PLACE, 'validators': [required('Vui lòng điền nơi cấp CMND/CCCD.')]},
-        ],
-        'dataframes': []
+        ], 'dataframes': []
     },
     3: {
-        'id': 3, 'name': 'contact', 'needs_clearance': None,
-        'title': 'Thông tin liên lạc chính',
-        'subtitle': 'Chúng tôi cần địa chỉ và số điện thoại để có thể liên lạc với bạn khi cần.',
-        'render_func': render_generic_step,
+        'id': 3, 'name': 'contact', 'title': 'Thông tin liên lạc', 'subtitle': 'Địa chỉ và số điện thoại để liên lạc khi cần.',
+        'render_func': render_generic_step, 'needs_clearance': None,
         'fields': [
             {'field': AppSchema.REGISTERED_ADDRESS, 'validators': [required("Vui lòng điền địa chỉ hộ khẩu.")]},
-            {'field': AppSchema.PHONE, 'validators': [required('Vui lòng điền số điện thoại.'),
-                                                      match_pattern(PHONE_PATTERN, "Số điện thoại phải có 10 chữ số, bắt đầu bằng 0.")]},
-        ],
-        'dataframes': []
+            {'field': AppSchema.PHONE, 'validators': [required('Vui lòng điền số điện thoại.'), match_pattern(PHONE_PATTERN, "Số điện thoại phải có 10 chữ số, bắt đầu bằng 0.")]},
+        ], 'dataframes': []
     },
     4: {
-        'id': 4, 'name': 'origin_info', 'needs_clearance': True,
-        'title': 'Nguồn gốc & Tôn giáo',
-        'subtitle': 'Hãy chia sẻ một chút về dân tộc và tôn giáo của bạn.',
-        'render_func': render_generic_step,
+        'id': 4, 'name': 'origin_info', 'title': 'Nguồn gốc & Tôn giáo', 'subtitle': 'Thông tin về dân tộc và tôn giáo của bạn.',
+        'render_func': render_generic_step, 'needs_clearance': True,
         'fields': [
             {'field': AppSchema.ETHNICITY, 'validators': [required_choice("Vui lòng chọn dân tộc.")]},
             {'field': AppSchema.RELIGION, 'validators': [required_choice("Vui lòng chọn tôn giáo.")]},
             {'field': AppSchema.PLACE_OF_ORIGIN, 'validators': [required("Vui lòng điền nguyên quán.")]},
-        ],
-        'dataframes': []
+        ], 'dataframes': []
     },
-
-    # --- Professional Background ---
     5: {
-        'id': 5, 'name': 'education', 'needs_clearance': None,
-        'title': 'Học vấn & Chuyên môn',
-        'subtitle': 'Quá trình học tập đã định hình nên con người bạn.',
-        'render_func': render_generic_step,
+        'id': 5, 'name': 'education', 'title': 'Học vấn & Chuyên môn', 'subtitle': 'Quá trình học tập đã định hình nên con người bạn.',
+        'render_func': render_generic_step, 'needs_clearance': None,
         'fields': [
-            {'field': AppSchema.EDUCATION_HIGH_SCHOOL, 'validators': [required_choice("Vui lòng điền lộ trình học cấp ba.")]},
+            {'field': AppSchema.EDUCATION_HIGH_SCHOOL, 'validators': [required_choice("Vui lòng chọn lộ trình học cấp ba.")]},
             {'field': AppSchema.EDUCATION_HIGHEST, 'validators': [required_choice("Vui lòng chọn bằng cấp cao nhất.")]},
             {'field': AppSchema.EDUCATION_MAJOR, 'validators': []},
             {'field': AppSchema.EDUCATION_FORMAT, 'validators': [required_choice("Vui lòng chọn loại hình đào tạo.")]},
             {'field': AppSchema.FOREIGN_LANGUAGE, 'validators': []},
-        ],
-        'dataframes': []
+        ], 'dataframes': []
     },
     6: {
-        'id': 6, 'name': 'work_history', 'needs_clearance': None,
-        'title': 'Quá trình Công tác',
-        'subtitle': 'Liệt kê quá trình làm việc của bạn từ trước đến nay, bắt đầu từ gần nhất.',
-        'render_func': render_generic_step,
-        'fields': [],
-        'dataframes': [{
-            'field': AppSchema.WORK_DATAFRAME,
-            'columns': {
-                'work_from': {'label': 'Từ (MM/YYYY)', 'props': 'dense outlined mask="##/####"'},
-                'work_to': {'label': 'Đến (MM/YYYY)', 'props': 'dense outlined mask="##/####"'},
-                'work_task': {'label': 'Nhiệm vụ', 'classes': 'col-3'},
-                'work_unit': {'label': 'Đơn vị'},
-                'work_role': {'label': 'Chức vụ'}
-            },
-            'validators': {
-                'work_from': [required('Vui lòng điền thời gian bắt đầu công tác'),
-                              match_pattern(DATE_MMYYYY_PATTERN, 'Vui lòng điền theo định dạng MM/YYYY')],
-                'work_to': [required('Vui lòng điền thời gian kết thúc công tác'),
-                            match_pattern(DATE_MMYYYY_PATTERN, 'Vui lòng điền theo định dạng MM/YYYY')],
-                'work_task': [required('Vui lòng điền công việc công tác')],
-                'work_unit': [required('Vui lòng điền đơn vị công tác')],
-                'work_role': [required('Vui lòng điền chức vụ công tác')],
-            }
-        }]
+        'id': 6, 'name': 'work_history', 'title': 'Quá trình Công tác', 'subtitle': 'Liệt kê quá trình làm việc, bắt đầu từ gần nhất.',
+        'render_func': render_generic_step, 'needs_clearance': None, 'fields': [],
+        'dataframes': [{'field': AppSchema.WORK_DATAFRAME, 'columns': {'work_from': {'label': 'Từ (MM/YYYY)', 'props': 'dense outlined mask="##/####"'}, 'work_to': {'label': 'Đến (MM/YYYY)', 'props': 'dense outlined mask="##/####"'}, 'work_task': {'label': 'Nhiệm vụ', 'classes': 'col-3'}, 'work_unit': {'label': 'Đơn vị'}, 'work_role': {'label': 'Chức vụ'}}, 'validators': {'work_from': [required('Vui lòng điền thời gian bắt đầu.'), match_pattern(DATE_MMYYYY_PATTERN, 'Dùng định dạng MM/YYYY')], 'work_to': [required('Vui lòng điền thời gian kết thúc.'), match_pattern(DATE_MMYYYY_PATTERN, 'Dùng định dạng MM/YYYY'), is_date_after('work_from', 'Ngày kết thúc phải sau ngày bắt đầu.')], 'work_task': [required('Vui lòng điền công việc.')], 'work_unit': [required('Vui lòng điền đơn vị.')], 'work_role': [required('Vui lòng điền chức vụ.')]}}]
     },
     7: {
-        'id': 7, 'name': 'awards', 'needs_clearance': None,
-        'title': 'Khen thưởng & Kỷ luật',
-        'subtitle': 'Nếu có bất kỳ khen thưởng hoặc kỷ luật nào đáng chú ý, hãy liệt kê ở đây.',
-        'render_func': render_generic_step,
+        'id': 7, 'name': 'awards', 'title': 'Khen thưởng & Kỷ luật', 'subtitle': 'Liệt kê các khen thưởng hoặc kỷ luật đáng chú ý.',
+        'render_func': render_generic_step, 'needs_clearance': None,
         'fields': [
             {'field': AppSchema.AWARD, 'validators': [required_choice("Vui lòng chọn khen thưởng.")]},
             {'field': AppSchema.DISCIPLINE, 'validators': []},
-        ],
-        'dataframes': []
+        ], 'dataframes': []
     },
-
-    # --- Family Background ---
     8: {
-        'id': 8, 'name': 'parents_basic', 'needs_clearance': None,
-        'title': 'Thông tin Bố Mẹ',
-        'subtitle': 'Phần này dành cho thông tin cơ bản về bố và mẹ của bạn.',
-        'render_func': render_generic_step,
-        'fields': [], 'dataframes': [],
-        'layout': {
-            'type': 'tabs', 'tabs': {
-                'dad_panel': { 'label': 'Thông tin cơ bản về bố', 'fields': [
-                        {'field': AppSchema.DAD_NAME, 'validators': name_validators},
-                        {'field': AppSchema.DAD_AGE, 'validators': age_validators},
-                        {'field': AppSchema.DAD_JOB, 'validators': [required("Vui lòng điền nghề nghiệp của Bố.")]},
-                ]},
-                'mom_panel': { 'label': 'Thông tin cơ bản về mẹ', 'fields': [
-                        {'field': AppSchema.MOM_NAME, 'validators': name_validators},
-                        {'field': AppSchema.MOM_AGE, 'validators': age_validators},
-                        {'field': AppSchema.MOM_JOB, 'validators': [required("Vui lòng điền nghề nghiệp của Mẹ.")]},
-                ]}
-            }
-        }
+        'id': 8, 'name': 'parents_basic', 'title': 'Thông tin Bố Mẹ', 'subtitle': 'Thông tin cơ bản về bố và mẹ của bạn.',
+        'render_func': render_generic_step, 'needs_clearance': None, 'fields': [], 'dataframes': [],
+        'layout': {'type': 'tabs', 'tabs': {'dad_panel': {'label': 'Thông tin Bố', 'fields': [{'field': AppSchema.DAD_NAME, 'validators': name_validators}, {'field': AppSchema.DAD_AGE, 'validators': age_validators}, {'field': AppSchema.DAD_JOB, 'validators': [required("Vui lòng điền nghề nghiệp của Bố.")]}]}, 'mom_panel': {'label': 'Thông tin Mẹ', 'fields': [{'field': AppSchema.MOM_NAME, 'validators': name_validators}, {'field': AppSchema.MOM_AGE, 'validators': age_validators}, {'field': AppSchema.MOM_JOB, 'validators': [required("Vui lòng điền nghề nghiệp của Mẹ.")]}]}}}
     },
     9: {
-        'id': 9, 'name': 'siblings', 'needs_clearance': True,
-        'title': 'Anh Chị Em ruột',
-        'subtitle': 'Vui lòng kê khai thông tin về các anh, chị, em ruột của bạn (nếu có).',
-        'render_func': render_generic_step,
-        'fields': [],
-        'dataframes': [{
-            'field': AppSchema.SIBLING_DATAFRAME,
-            'columns': {
-                'sibling_name': {'label': 'Họ và tên'},
-                'sibling_age': {'label': 'Tuổi', 'classes': 'col-2'},
-                'sibling_job': {'label': 'Nghề nghiệp'},
-                'sibling_address': {'label': 'Nơi ở', 'classes': 'col-3'}
-            },
-            'validators': {
-                'sibling_name': [required('Vui lòng điền tên anh chị em')],
-                'sibling_age': [required('Vui lòng điền tuổi anh chị em'), match_pattern(NUMERIC_PATTERN, "Tuổi anh chị em phải là số.")],
-                'sibling_job': [required('Vui lòng điền nghề nghiệp anh chị em')],
-                'sibling_address': [required('Vui lòng điền địa chỉ anh chị em')],
-            }
-        }]
+        'id': 9, 'name': 'siblings', 'title': 'Anh Chị Em ruột', 'subtitle': 'Kê khai thông tin về các anh, chị, em ruột (nếu có).',
+        'render_func': render_generic_step, 'needs_clearance': True, 'fields': [],
+        'dataframes': [{'field': AppSchema.SIBLING_DATAFRAME, 'columns': {'sibling_name': {'label': 'Họ và tên'}, 'sibling_age': {'label': 'Tuổi', 'classes': 'col-2'}, 'sibling_job': {'label': 'Nghề nghiệp'}, 'sibling_address': {'label': 'Nơi ở', 'classes': 'col-3'}}, 'validators': {'sibling_name': [required('Vui lòng điền tên.')], 'sibling_age': [required('Vui lòng điền tuổi.'), match_pattern(NUMERIC_PATTERN, "Tuổi phải là số.")], 'sibling_job': [required('Vui lòng điền nghề nghiệp.')], 'sibling_address': [required('Vui lòng điền địa chỉ.')]}}]
     },
     10: {
-        'id': 10, 'name': 'spouse_and_children', 'needs_clearance': True,
-        'title': 'Vợ/Chồng & Các con',
-        'subtitle': 'Hãy cung cấp thông tin về gia đình nhỏ của bạn (nếu có).',
-        'render_func': render_generic_step,
-        'fields': [
-            {'field': AppSchema.SPOUSE_NAME, 'validators': []},
-            {'field': AppSchema.SPOUSE_AGE, 'validators': []},
-            {'field': AppSchema.SPOUSE_JOB, 'validators': []},
-        ],
-        'dataframes': [{
-            'field': AppSchema.CHILD_DATAFRAME,
-            'columns': {
-                'child_name': {'label': 'Họ và tên con'},
-                'child_age': {'label': 'Tuổi con', 'classes': 'col-2'},
-                'child_job': {'label': 'Học tập/Công tác'}
-            },
-            'validators': {
-                'child_name': [required('Vui lòng điền tên con cái')],
-                'child_age': [required('Vui lòng điền tuổi con cái'), match_pattern(NUMERIC_PATTERN, "Tuổi con cái phải là số.")],
-                'child_job': [required('Vui lòng điền nghề nghiệp con cái')],
-            }
-        }]
+        'id': 10, 'name': 'spouse_and_children', 'title': 'Vợ/Chồng & Các con', 'subtitle': 'Cung cấp thông tin về gia đình nhỏ của bạn (nếu có).',
+        'render_func': render_generic_step, 'needs_clearance': True,
+        'fields': [{'field': AppSchema.SPOUSE_NAME, 'validators': []}, {'field': AppSchema.SPOUSE_AGE, 'validators': []}, {'field': AppSchema.SPOUSE_JOB, 'validators': []}],
+        'dataframes': [{'field': AppSchema.CHILD_DATAFRAME, 'columns': {'child_name': {'label': 'Họ và tên con'}, 'child_age': {'label': 'Tuổi con', 'classes': 'col-2'}, 'child_job': {'label': 'Học tập/Công tác'}}, 'validators': {'child_name': [required('Vui lòng điền tên con.')], 'child_age': [required('Vui lòng điền tuổi con.'), match_pattern(NUMERIC_PATTERN, "Tuổi phải là số.")], 'child_job': [required('Vui lòng điền nghề nghiệp con.')]}}]
     },
-
-    # --- GOVERNMENT/MILITARY CLEARANCE SECTION ---
     11: {
-        'id': 11, 'name': 'gov_political_class', 'needs_clearance': True,
-        'title': 'Kê khai Thành phần',
-        'subtitle': 'Bước này là yêu cầu riêng cho hồ sơ Nhà nước.',
-        'render_func': render_generic_step,
+        'id': 11, 'name': 'gov_political_class', 'title': 'Kê khai Thành phần', 'subtitle': 'Yêu cầu riêng cho hồ sơ Nhà nước.',
+        'render_func': render_generic_step, 'needs_clearance': True,
         'fields': [
             {'field': AppSchema.SOCIAL_STANDING, 'validators': [required_choice("Vui lòng chọn thành phần bản thân.")]},
             {'field': AppSchema.FAMILY_STANDING, 'validators': [required_choice("Vui lòng chọn thành phần gia đình.")]},
-        ],
-        'dataframes': []
+        ], 'dataframes': []
     },
     12: {
-        'id': 12, 'name': 'gov_affiliation', 'needs_clearance': True,
-        'title': 'Thông tin Đảng/Đoàn & Lương',
-        'subtitle': 'Cung cấp thông tin về quá trình tham gia Đoàn, Đảng và mức lương.',
-        'render_func': render_generic_step,
+        'id': 12, 'name': 'gov_affiliation', 'title': 'Thông tin Đảng/Đoàn & Lương', 'subtitle': 'Cung cấp thông tin về quá trình tham gia Đoàn, Đảng.',
+        'render_func': render_generic_step, 'needs_clearance': True,
         'fields': [
             {'field': AppSchema.YOUTH_DATE, 'validators': []},
             {'field': AppSchema.PARTY_DATE, 'validators': []},
-            {'field': AppSchema.CURRENT_SALARY, 'validators': [required("Vui lòng điền mức lương."),
-                                                               match_pattern(SALARY_PATTERN, "Lương phải là một con số.")]},
-        ],
-        'dataframes': []
+            {'field': AppSchema.CURRENT_SALARY, 'validators': [required("Vui lòng điền mức lương."), match_pattern(SALARY_PATTERN, "Lương phải là số.")]},
+        ], 'dataframes': []
     },
     13: {
-        'id': 13, 'name': 'gov_parents_history', 'needs_clearance': True,
-        'title': 'Lịch sử Gia đình (chi tiết)',
-        'subtitle': 'Để phục vụ công tác thẩm tra, vui lòng kê khai chi tiết quá trình hoạt động của bố mẹ qua các thời kỳ lịch sử.',
-        'render_func': render_generic_step,
-        'fields': [], 'dataframes': [],
-        'layout': {
-            'type': 'tabs', 'tabs': {
-                'dad_panel': { 'label': 'Thông tin Bố', 'fields': [
-                        {'field': AppSchema.DAD_PRE_AUGUST_REVOLUTION, 'validators': [required("Vui lòng điền hoạt động của Bố trước CM tháng 8.")]},
-                        {'field': AppSchema.DAD_DURING_FRENCH_WAR, 'validators': [required("Vui lòng điền hoạt động của Bố trong kháng chiến chống Pháp.")]},
-                        {'field': AppSchema.DAD_FROM_1955_PRESENT, 'validators': [required("Vui lòng điền hoạt động của Bố từ 1955 đến nay.")]},
-                ]},
-                'mom_panel': { 'label': 'Thông tin Mẹ', 'fields': [
-                        {'field': AppSchema.MOM_PRE_AUGUST_REVOLUTION, 'validators': [required("Vui lòng điền hoạt động của Mẹ trước CM tháng 8.")]},
-                        {'field': AppSchema.MOM_DURING_FRENCH_WAR, 'validators': [required("Vui lòng điền hoạt động của Mẹ trong kháng chiến chống Pháp.")]},
-                        {'field': AppSchema.MOM_FROM_1955_PRESENT, 'validators': [required("Vui lòng điền hoạt động của Mẹ từ 1955 đến nay.")]},
-                ]}
-            }
-        }
+        'id': 13, 'name': 'gov_parents_history', 'title': 'Lịch sử Gia đình (chi tiết)', 'subtitle': 'Kê khai chi tiết quá trình hoạt động của bố mẹ qua các thời kỳ.',
+        'render_func': render_generic_step, 'needs_clearance': True, 'fields': [], 'dataframes': [],
+        'layout': {'type': 'tabs', 'tabs': {'dad_panel': {'label': 'Thông tin Bố', 'fields': [{'field': AppSchema.DAD_PRE_AUGUST_REVOLUTION, 'validators': [required("Vui lòng điền hoạt động của Bố.")]}, {'field': AppSchema.DAD_DURING_FRENCH_WAR, 'validators': [required("Vui lòng điền hoạt động của Bố.")]}, {'field': AppSchema.DAD_FROM_1955_PRESENT, 'validators': [required("Vui lòng điền hoạt động của Bố.")]}]}, 'mom_panel': {'label': 'Thông tin Mẹ', 'fields': [{'field': AppSchema.MOM_PRE_AUGUST_REVOLUTION, 'validators': [required("Vui lòng điền hoạt động của Mẹ.")]}, {'field': AppSchema.MOM_DURING_FRENCH_WAR, 'validators': [required("Vui lòng điền hoạt động của Mẹ.")]}, {'field': AppSchema.MOM_FROM_1955_PRESENT, 'validators': [required("Vui lòng điền hoạt động của Mẹ.")]}]}}}
     },
-
-    # --- Miscellaneous & Finalization ---
     14: {
-        'id': 14, 'name': 'health_and_military', 'needs_clearance': True,
-        'title': 'Sức khỏe & Quân sự',
-        'subtitle': 'Một vài thông tin cuối về sức khoẻ và nghĩa vụ quân sự (nếu có).',
-        'render_func': render_generic_step,
+        'id': 14, 'name': 'health_and_military', 'title': 'Sức khỏe & Quân sự', 'subtitle': 'Thông tin về sức khoẻ và nghĩa vụ quân sự (nếu có).',
+        'render_func': render_generic_step, 'needs_clearance': True,
         'fields': [
             {'field': AppSchema.HEALTH, 'validators': [required("Vui lòng điền tình trạng sức khỏe.")]},
             {'field': AppSchema.HEIGHT, 'validators': [required("Điền chiều cao (cm)."), match_pattern(NUMERIC_PATTERN, "Phải là số.")]},
             {'field': AppSchema.WEIGHT, 'validators': [required("Điền cân nặng (kg)."), match_pattern(NUMERIC_PATTERN, "Phải là số.")]},
             {'field': AppSchema.JOIN_ARMY_DATE, 'validators': []},
             {'field': AppSchema.LEAVE_ARMY_DATE, 'validators': []},
-        ],
-        'dataframes': [],
+        ], 'dataframes': [],
     },
     15: {
-        'id': 15, 'name': 'emergency_contact', 'needs_clearance': None,
-        'title': 'Liên hệ Khẩn cấp',
-        'subtitle': 'Cuối cùng, cho chúng tôi biết thông tin người cần báo tin khi khẩn cấp.',
-        'render_func': render_emergency_contact_step,
+        'id': 15, 'name': 'emergency_contact', 'title': 'Liên hệ Khẩn cấp', 'subtitle': 'Người cần báo tin khi khẩn cấp.',
+        'render_func': render_emergency_contact_step, 'needs_clearance': None,
         'fields': [
             {'field': AppSchema.EMERGENCY_CONTACT_DETAILS, 'validators': [required("Vui lòng điền tên người cần báo tin.")]},
             {'field': AppSchema.SAME_ADDRESS_AS_REGISTERED, 'validators': []},
-            {'field': AppSchema.EMERGENCY_CONTACT_PLACE, 'validators': [
-                lambda value, data: (True, '') if data.get(AppSchema.SAME_ADDRESS_AS_REGISTERED.key)
-                else required("Vui lòng điền địa chỉ người báo tin.")(value, data)
-            ]},
-        ],
-        'dataframes': [],
+            {'field': AppSchema.EMERGENCY_CONTACT_PLACE, 'validators': [lambda value, data: (True, '') if data.get(AppSchema.SAME_ADDRESS_AS_REGISTERED.key) else required("Vui lòng điền địa chỉ người báo tin.")(value, data)]},
+        ], 'dataframes': [],
     },
     16: {
-        'id': 16, 'name': 'review', 'needs_clearance': None,
-        'title': 'Xem lại & Hoàn tất',
-        'subtitle': 'Kiểm tra lại toàn bộ thông tin. Nếu chính xác, bạn có thể tạo file PDF.',
-        'render_func': render_review_step,
-        'fields': [],
-        'dataframes': []
+        'id': 16, 'name': 'review', 'title': 'Xem lại & Hoàn tất', 'subtitle': 'Kiểm tra lại toàn bộ thông tin và tạo file PDF.',
+        'render_func': render_review_step, 'needs_clearance': None, 'fields': [], 'dataframes': []
     },
 }
 
-# ===================================================================
-# 5. NAVIGATION ENGINE & MAIN UI CONTROLLER
-# ===================================================================
+def _get_current_form_template() -> FormTemplate | None:
+    """Looks up the blueprint for the user's selected form use case."""
+    user_storage = cast(Dict[str, Any], app.storage.user)
+    
+    # The value stored is now the STRING NAME of the Enum (e.g., 'PRIVATE_SECTOR')
+    use_case_value_str = user_storage.get(SELECTED_USE_CASE_KEY)
+    if not use_case_value_str:
+        return None
 
-def _get_current_step_index(current_step_id: int) -> int:
-    """Finds the list index for a given step ID from the blueprint."""
-    for i, step_def in enumerate(STEPS_DEFINITION):
-        if step_def['id'] == current_step_id:
-            return i
-    return -1 # Should not happen in a normal flow
-
+    try:
+        # Get the Enum member by its string name. This is the correct way.
+        selected_use_case = FormUseCaseType[use_case_value_str]
+        return FORM_TEMPLATE_REGISTRY.get(selected_use_case)
+    except ValueError:
+        # If the name (e.g., "PRIVATE_SECTOR") doesn't exist in the enum
+        return None
 
 def next_step() -> None:
+    """Navigates to the next step based on the selected template's defined sequence."""
     user_storage = cast(Dict[str, Any], app.storage.user)
-    current_step_id: int = cast(int, user_storage.get(STEP_KEY, 0))
-    current_index = _get_current_step_index(current_step_id)
-    needs_clearance_val: bool = cast(bool, user_storage.get(NEEDS_CLEARANCE_KEY, False))
-
-    if current_index >= len(STEPS_DEFINITION) - 1:
-        return
-
-    # Iterate forward from the current position to find the next valid step
-    next_index: int = current_index + 1
-    while next_index < len(STEPS_DEFINITION):
-        next_step_candidate = STEPS_DEFINITION[next_index]
-
-        if next_step_candidate[NEEDS_CLEARANCE_KEY] and not needs_clearance_val:
-            next_index += 1
-            continue # Skip and check next step
-
-        user_storage[STEP_KEY] = next_step_candidate['id']
-        user_storage[FORM_ATTEMPTED_SUBMISSION_KEY] = False
-        user_storage[CURRENT_STEP_ERRORS_KEY] = {}
+    form_template = _get_current_form_template()
+    if not form_template:
+        # Back to first step
+        user_storage[STEP_KEY] = 0
         update_step_content.refresh()
-        return
+        return 
+
+    step_sequence: List[int] = form_template['step_sequence']
+    current_step_id: int = cast(int, user_storage.get(STEP_KEY, 0))
+
+    try: 
+        current_index = step_sequence.index(current_step_id)
+        if current_index < len(step_sequence) - 1:
+            next_step_id = step_sequence[current_index+1]
+            user_storage[STEP_KEY] = next_step_id
+            user_storage[FORM_ATTEMPTED_SUBMISSION_KEY] = False
+            user_storage[CURRENT_STEP_ERRORS_KEY] = {}
+            update_step_content.refresh()
+    except ValueError:
+        user_storage[STEP_KEY] = step_sequence[0] if step_sequence else 0
+        update_step_content.refresh()
+
 
 def prev_step() -> None:
     user_storage = cast(Dict[str, Any], app.storage.user)
-    current_step_id: int = cast(int, user_storage.get(STEP_KEY, 0))
-    current_index = _get_current_step_index(current_step_id)
-    needs_clearance_val: bool = cast(bool, user_storage.get(NEEDS_CLEARANCE_KEY, False))
+    form_template = _get_current_form_template()
 
-    if current_index <= 0:
-        return
-    
-    prev_index: int = current_index - 1
-    while prev_index >= 0:
-        prev_step_candidate = STEPS_DEFINITION[prev_index]
+    if form_template:
+        step_sequence: List[int] = form_template['step_sequence']
+        current_step_id: int = cast(int, user_storage.get(STEP_KEY, 0))
 
-        if prev_step_candidate[NEEDS_CLEARANCE_KEY] and not needs_clearance_val:
-            prev_index -= 1
-            continue
-
-        user_storage[STEP_KEY] = prev_step_candidate['id']
-        user_storage[FORM_ATTEMPTED_SUBMISSION_KEY] = False
-        user_storage[CURRENT_STEP_ERRORS_KEY] = {}
-        update_step_content.refresh()
-        return
-
-# ===================================================================
-# 5. DEFINE THE NAVIGATION ENGINE & UI CONTROLLER
-# These functions USE the blueprint, so they must come after it.
-# ===================================================================
-
-# --- update_step_content, main_page, ui.run() ---
+        try: 
+            current_index = step_sequence.index(current_step_id)
+            if current_index > 0:
+                prev_step_id = step_sequence[current_index-1]
+                user_storage[STEP_KEY] = prev_step_id
+                user_storage[FORM_ATTEMPTED_SUBMISSION_KEY] = False
+                user_storage[CURRENT_STEP_ERRORS_KEY] = {}
+                update_step_content.refresh()
+        except ValueError:
+            pass 
+    # Fallback: If anything is wrong, go to the selector step.
+    user_storage[STEP_KEY] = 0
+    update_step_content.refresh()
+ 
 @ui.refreshable
 def update_step_content() -> None:
     user_storage = cast(Dict[str, Any], app.storage.user)
     current_step_id: int = user_storage.get(STEP_KEY, 0)
     # Find the correct step definition from the blueprint
-    step_to_render = next((step for step in STEPS_DEFINITION if step['id']==current_step_id), None)
+    step_to_render = STEPS_BY_ID.get(current_step_id)
     
     if step_to_render:
         step_to_render['render_func'](step_to_render)
@@ -847,20 +667,25 @@ def update_step_content() -> None:
 @ui.page('/')
 def main_page() -> None:
     user_storage = cast(Dict[str, Any], app.storage.user)
-    if not user_storage: # Check if session needs initialization
-        user_storage[STEP_KEY] = 0
-        user_storage[FORM_DATA_KEY] = {}
-        initialize_form_data()        
+    if not user_storage:
+        private_sector_enum_name = FormUseCaseType.PRIVATE_SECTOR.name # Get 'PRIVATE_SECTOR'
+        user_storage[SELECTED_USE_CASE_KEY] = private_sector_enum_name
+        
+        # Start on the first step of the private sector sequence
+        user_storage[STEP_KEY] = FORM_TEMPLATE_REGISTRY[FormUseCaseType.PRIVATE_SECTOR]['step_sequence'][0]
+        
         user_storage[FORM_ATTEMPTED_SUBMISSION_KEY] = False
-        user_storage[NEEDS_CLEARANCE_KEY] = False
-        user_storage[CURRENT_STEP_ERRORS_KEY] = {} # Initialize error store
+        user_storage[CURRENT_STEP_ERRORS_KEY] = {}
+
+        # Initialize form_data and explicitly set the UI value to a string
+        user_storage[FORM_DATA_KEY] = {}
+        initialize_form_data()
 
     ui.query('body').style('background-color: #f0f2f5;')
     
     with ui.header(elevated=True).classes('bg-primary text-white q-pa-sm items-center'):
         ui.label("📝 AutoLý – Kê khai Sơ yếu lý lịch").classes('text-h5')
         ui.space()
-        # Debug menu (ensure values are JSON serializable for ui.json_editor)
         with ui.button(icon='bug_report', color='white').props('flat round dense'):
             with ui.menu().classes('bg-grey-2 shadow-3'):
                 with ui.card().style("min-width: 350px; max-width: 90vw;"):
@@ -876,10 +701,9 @@ def main_page() -> None:
         with ui.column().classes('col w-full q-pa-md scroll'):
             update_step_content()
 
-# Ensure this is the last call, especially if uvicorn_reload_dirs is used.
-if __name__ in {"__main__", "__mp_main__"}: # Standard NiceGUI practice for run
+if __name__ in {"__main__", "__mp_main__"}:
     if not os.path.exists(PDF_TEMPLATE_PATH):
         print(f"WARNING: PDF template not found at '{PDF_TEMPLATE_PATH}'. PDF generation will fail.")
-        
     ui.run(storage_secret='a_secure_and_unique_secret_string_for_this_app!',
            uvicorn_reload_dirs='.', uvicorn_reload_includes='*.py')
+

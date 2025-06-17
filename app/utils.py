@@ -6,11 +6,14 @@ from datetime import datetime, date
 from typing import Any, Callable, Dict, List, NotRequired, Optional, Union, Tuple, TypeAlias, TypedDict, cast
 from dataclasses import dataclass
 import para # Assuming para.py exists and might be used for defaults
+from form_data_builder import FORM_TEMPLATE_REGISTRY, FormUseCaseType
 
 # --- Type Aliases ---
 ValidationFuncType: TypeAlias = Callable[[Any], Tuple[bool, str]]
 
-SELECTED_DOSSIER_TYPE_KEY: str = 'selected_dossier_type'
+
+# --- New Session Key ---
+SELECTED_USE_CASE_KEY: str = 'selected_use_case' # <-- Add this new key
 
 # --- ARCHITECTURAL CORE: SINGLE SOURCE OF TRUTH ---
 @dataclass(frozen=True)
@@ -41,7 +44,12 @@ class AppSchema:
     Defines all fields, their properties, and their mapping to the PDF.
     """
     # Step 1
-    STEP0_ANS = FormField(key='step0_ans', label='Nộp cho cơ quan Nhà nước/Quân đội', ui_type='radio', options={'Không': 'Không', 'Có': 'Có'}, default_value='Không')
+    FORM_TEMPLATE_SELECTOR = FormField(
+        key='form_template_selector', label='Tổ chức bạn đang nộp hồ sơ cho:',
+        ui_type='radio', 
+        options={use_case.name: template['name'] for use_case, template in FORM_TEMPLATE_REGISTRY.items()},
+        default_value=FormUseCaseType.PRIVATE_SECTOR.name
+    )
 
     # Step 2 (Personal Info)
     FULL_NAME = FormField(key='full_name', label='HỌ VÀ TÊN (viết hoa)', pdf_map=['full_name_p1', 'full_name_p2'])
@@ -69,7 +77,7 @@ class AppSchema:
         )
     RELIGION = FormField(
         key='religion', label='Tôn giáo', ui_type='select',
-        options=getattr(para, 'religions', ['Không']),
+        options=getattr(para, 'religion', ['Không']),
         pdf_map='religion',
         default_value=getattr(para, 'religion', ['Không'])[0]
         ) 
@@ -90,17 +98,17 @@ class AppSchema:
     EDUCATION_MAJOR = FormField(key='education_major', label='Chuyên ngành đào tạo', pdf_map='education_major', default_value='')
     EDUCATION_FORMAT = FormField(key='education_format', label='Loại hình đào tạo', ui_type='select',
                                  options=getattr(para, 'education_format', ['Chính quy']),
-                                 pdf_map='education_major', 
+                                 pdf_map='education_format', 
                                  default_value=getattr(para, 'education_format', ['Chính quy'])[0]
                                  )
 
     # Step 8 (award)
     AWARD = FormField(key='award', label='Khen thưởng', ui_type='select',
                       options=getattr(para, 'awards_titles', ['Chưa có']),
-                      pdf_map='education_major', 
+                      pdf_map='award', 
                       default_value=getattr(para, 'awards_titles', ['Chưa có'])[0]
                       )
-    DISCIPLINE = FormField(key='discipline', label='Kỷ luật', pdf_map='education_major', default_value='Không có')
+    DISCIPLINE = FormField(key='discipline', label='Kỷ luật', pdf_map='discipline', default_value='Không có')
 
     # Step 9 (basic parents info)
     DAD_NAME = FormField(key='dad_name', label='Họ tên Bố', pdf_map='dad_name', default_value='')
@@ -267,12 +275,16 @@ def _create_select_input(field: FormField, current_value: Any) -> Element:
     return select_el
 
 def _create_radio_input(field: FormField, current_value: Any) -> Element:
-    # Note: NiceGUI radio doesn't have a built-in error prop, so we show a label.    
+    """Creates a standard ui.radio element."""
+    # --- DEBUGGING ---
+    print(f"Creating radio for key: '{field.key}' with value: {current_value} (type: {type(current_value)}) and options: {field.options}")
+    # --- END DEBUGGING ---
+    #  
     with ui.column().classes('q-gutter-y-xs'):
         ui.label(field.label).classes('text-caption')
         radio_el = ui.radio(
             options=field.options or [],
-            value=current_value,
+            value=str(current_value) if current_value is not None else None,
             on_change=lambda e, k=field.key: get_form_data().update({k: e.value})
         ).props("inline")
     return radio_el
@@ -325,15 +337,6 @@ def _create_date_input(field: FormField, current_value: Any) -> Element:
                 d_str, m_str = f"{int(d):02d}", f"{int(m):02d}"
                 # Validate the date is a real calendar date (e.g., no Feb 30).
                 dt_object = datetime.strptime(f'{y}-{m_str}-{d_str}', '%Y-%m-%d')
-                
-                # Check against min/max bounds if they exist.
-                if field.date_min_max:
-                    min_d, max_d = field.date_min_max
-                    if (min_d and dt_object.date() < min_d) or \
-                       (max_d and dt_object.date() > max_d):
-                        # If out of bounds, clear the storage. Let validation handle the error message.
-                        form_data[field.key] = None
-                        return
                         
                 # If everything is valid, update the single source of truth.
                 form_data[field.key] = dt_object.strftime(DATE_FORMAT_STORAGE)
