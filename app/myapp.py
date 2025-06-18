@@ -5,9 +5,11 @@
 # ===================================================================
 from nicegui import ui, app
 from typing import (
-    Any, Callable, List, Dict, Optional, Tuple, TypedDict, Union,
+    Any, TypedDict,
     TypeAlias, cast
 )
+from collections.abc import Callable
+
 # Assuming validation.py and para.py are in the same directory or accessible in PYTHONPATH
 from validation import (
     ValidatorFunc,
@@ -17,9 +19,9 @@ from fillpdf import fillpdfs  # type: ignore[import]
 import tempfile
 import os
 from pathlib import Path
-from typing import Pattern
 from typing_extensions import NotRequired
 import re
+from re import Pattern
 
 # Import the new, powerful schema and utilities
 from form_data_builder import FormUseCaseType, FormTemplate, FORM_TEMPLATE_REGISTRY
@@ -32,31 +34,31 @@ from utils import (
 )
 
 # --- Modernized Type Aliases ---
-SimpleValidatorEntry: TypeAlias = Tuple[str, List[ValidatorFunc]]
-DataframeColumnRules: TypeAlias = Dict[str, List[ValidatorFunc]]
-DataframeValidatorEntry: TypeAlias = Tuple[str, DataframeColumnRules]
-ValidationEntry: TypeAlias = Union[SimpleValidatorEntry, DataframeValidatorEntry]
+SimpleValidatorEntry: TypeAlias = tuple[str, list[ValidatorFunc]]
+DataframeColumnRules: TypeAlias = dict[str, list[ValidatorFunc]]
+DataframeValidatorEntry: TypeAlias = tuple[str, DataframeColumnRules]
+ValidationEntry: TypeAlias = SimpleValidatorEntry | DataframeValidatorEntry
 
 # --- Blueprint TypedDicts ---
 # This makes our STEPS_DEFINITION fully type-checked and self-documenting.
 class FieldConfig(TypedDict):
     field: FormField
-    validators: List[ValidatorFunc]
+    validators: list[ValidatorFunc]
 
 class DataframeConfig(TypedDict):
     field: FormField
-    columns: Dict[str, Dict[str, str]]
+    columns: dict[str, dict[str, str]]
     validators: DataframeColumnRules
 
 class PanelInfo(TypedDict):
     """Defines the structure for a single panel within a tabbed layout."""
     label: str
-    fields: List[FieldConfig]
+    fields: list[FieldConfig]
 
 class TabbedLayout(TypedDict):
     """Defines the structure for the entire tabbed layout object."""
     type: str
-    tabs: Dict[str, PanelInfo]
+    tabs: dict[str, PanelInfo]
 
 class StepDefinition(TypedDict):
     id: int
@@ -64,9 +66,9 @@ class StepDefinition(TypedDict):
     title: str
     subtitle: str
     render_func: Callable[['StepDefinition'], None] # Points to the generic or a special renderer
-    fields: List[FieldConfig]
-    dataframes: List[DataframeConfig] # For complex list editors
-    needs_clearance: Optional[bool]
+    fields: list[FieldConfig]
+    dataframes: list[DataframeConfig] # For complex list editors
+    needs_clearance: bool | None
     layout: NotRequired[TabbedLayout] # The key may not exist.
 
 # ===================================================================
@@ -74,8 +76,8 @@ class StepDefinition(TypedDict):
 # ===================================================================
 
 def _validate_simple_field(
-    field_key: str, validator_list: List[ValidatorFunc],
-    form_data: Dict[str, Any], errors: Dict[str, str]
+    field_key: str, validator_list: list[ValidatorFunc],
+    form_data: dict[str, Any], errors: dict[str, str]
 ) -> bool:
     """
     Validates a single, simple form field.
@@ -97,7 +99,7 @@ def _validate_simple_field(
 
 def _validate_dataframe_field(
     dataframe_key: str, column_rules: DataframeColumnRules,
-    form_data: Dict[str, Any], errors: Dict[str, str]
+    form_data: dict[str, Any], errors: dict[str, str]
 ) -> bool:
     """
     Validates all cells within a dataframe field.
@@ -105,7 +107,7 @@ def _validate_dataframe_field(
     Appends cell-specific error messages to the `errors` dictionary.
     """
     is_dataframe_valid: bool = True
-    dataframe_value: List[Dict[str, Any]] = form_data.get(dataframe_key, [])
+    dataframe_value: list[dict[str, Any]] = form_data.get(dataframe_key, [])
     
     for row_index, row_data in enumerate(dataframe_value):
         for col_key, validator_list in column_rules.items():
@@ -124,9 +126,9 @@ def _validate_dataframe_field(
 
 # --- Validation Execution Function ---
 def execute_step_validators(
-    validators_for_step: List[ValidationEntry],
-    form_data: Dict[str, Any] # fetched from app.storage.user
-) -> Tuple[bool, Dict[str, str]]:
+    validators_for_step: list[ValidationEntry],
+    form_data: dict[str, Any] # fetched from app.storage.user
+) -> tuple[bool, dict[str, str]]:
     """
     Executes all validators for a given step by dispatching to specialized helpers.
     
@@ -141,7 +143,7 @@ def execute_step_validators(
           invalid fields or cells.
     """
     
-    new_errors: Dict[str, str] = {}
+    new_errors: dict[str, str] = {}
     is_step_valid: bool = True
     for entry in validators_for_step:
         field_key, rules = entry
@@ -168,15 +170,15 @@ async def _handle_step_confirmation(button: ui.button) -> None:
     button.disable()
 
     try:
-        user_storage = cast(Dict[str, Any], app.storage.user)
+        user_storage = cast(dict[str, Any], app.storage.user)
         current_step_id = user_storage.get(STEP_KEY, 0)
         current_step_def = STEPS_BY_ID.get(current_step_id)
         
         if not current_step_def: return
 
         # --- Build the list of validators dynamically from the step definition ---
-        validators_for_step: List[ValidationEntry] = []
-        def collect_validators(fields_config: List[FieldConfig]):
+        validators_for_step: list[ValidationEntry] = []
+        def collect_validators(fields_config: list[FieldConfig]):
             for field_conf in fields_config:
                 validators_for_step.append((field_conf['field'].key, field_conf['validators']))
 
@@ -221,15 +223,15 @@ async def create_and_download_pdf(button: ui.button) -> None:
 
     button.disable()
     try:
-        user_storage = cast(Dict[str, Any], app.storage.user)
+        user_storage = cast(dict[str, Any], app.storage.user)
         if FORM_DATA_KEY not in user_storage or not user_storage[FORM_DATA_KEY]:
             ui.notify("Chưa có dữ liệu để tạo PDF. Vui lòng điền thông tin.", type='warning')
             return
         
         # Call the utility function to get the mapped data
-        data_to_fill_pdf: Dict[str, Any] = generate_pdf_data_mapping()
+        data_to_fill_pdf: dict[str, Any] = generate_pdf_data_mapping()
 
-        output_pdf_path_str: Optional[str] = None
+        output_pdf_path_str: str | None = None
         try:
             if not os.path.exists(PDF_TEMPLATE_PATH):
                 ui.notify(f"Lỗi nghiêm trọng: Không tìm thấy file mẫu PDF tại '{PDF_TEMPLATE_PATH}'. \
@@ -271,16 +273,16 @@ def _render_dataframe_editor(df_conf: DataframeConfig) -> None:
     """Renders a dynamic list editor for things like Work History, Siblings, etc."""
     ui.label(df_conf['field'].label).classes('text-subtitle1 q-mt-md q-mb-sm')
     
-    user_storage = cast(Dict[str, Any], app.storage.user)
+    user_storage = cast(dict[str, Any], app.storage.user)
     form_data = get_form_data()
     dataframe_key = df_conf['field'].key
     
     @ui.refreshable
     def render_rows() -> None:
         # Get the most up-to-date list from storage
-        dataframe = cast(List[Dict[str, Any]], form_data.get(dataframe_key, []))
+        dataframe = cast(list[dict[str, Any]], form_data.get(dataframe_key, []))
         form_attempted: bool = user_storage.get(FORM_ATTEMPTED_SUBMISSION_KEY, False)
-        current_errors: Dict[str, str] = user_storage.get(CURRENT_STEP_ERRORS_KEY, {})
+        current_errors: dict[str, str] = user_storage.get(CURRENT_STEP_ERRORS_KEY, {})
         
         if not dataframe:
             ui.label(f"Chưa có mục nào được thêm.").classes("text-italic text-grey q-pa-md text-center full-width")
@@ -318,7 +320,7 @@ def render_generic_step(step_def: StepDefinition) -> None:
     ui.label(step_def['title']).classes('text-h6 q-mb-xs')
     ui.markdown(step_def['subtitle'])
 
-    def render_field_list(fields_to_render: List[FieldConfig]) -> None:
+    def render_field_list(fields_to_render: list[FieldConfig]) -> None:
         for field_conf in fields_to_render:
             create_field(field_definition=field_conf['field'])
 
@@ -439,16 +441,13 @@ SALARY_PATTERN: Pattern[str] = re.compile(r"^\d+$|^\d{1,3}(?:[.,]\d{3})*$")
 DATE_MMYYYY_PATTERN: Pattern[str] = re.compile(r'^(0[1-9]|1[0-2])/\d{4}$')
 
 # --- Smart, Reusable Validator Lists ---
-name_validators: List[ValidatorFunc] = [
-    required("Vui lòng điền đầy đủ họ và tên."),
-    match_pattern(FULL_NAME_PATTERN, "Họ và tên phải viết hoa, không chứa số hoặc ký tự đặc biệt."),
-]
-age_validators: List[ValidatorFunc] = [
-    required("Vui lòng điền tuổi."),
-    match_pattern(NUMERIC_PATTERN, "Tuổi phải là một con số."),
+
+age_validators: list[ValidatorFunc] = [
+    required("Vui lòng điền năm sinh."),
+    match_pattern(NUMERIC_PATTERN, "Năm sinh phải là một con số."),
 ]
 
-STEPS_BY_ID: Dict[int, StepDefinition] = {
+STEPS_BY_ID: dict[int, StepDefinition] = {
     0: {
         'id': 0, 'name': 'dossier_selector',
         'title': 'Chọn Loại Hồ Sơ Cần Chuẩn Bị',
@@ -461,7 +460,7 @@ STEPS_BY_ID: Dict[int, StepDefinition] = {
         'id': 1, 'name': 'core_identity', 'title': 'Thông tin cá nhân', 'subtitle': 'Bắt đầu với thông tin định danh cơ bản của bạn.',
         'render_func': render_generic_step, 'needs_clearance': None,
         'fields': [
-            {'field': AppSchema.FULL_NAME, 'validators': name_validators},
+            {'field': AppSchema.FULL_NAME, 'validators': [required("Vui lòng điền đầy đủ họ và tên."), match_pattern(FULL_NAME_PATTERN, "Họ và tên phải viết hoa, không chứa số hoặc ký tự đặc biệt.")]},
             {'field': AppSchema.GENDER, 'validators': [required_choice("Vui lòng chọn giới tính.")]},
             {'field': AppSchema.DOB, 'validators': [required('Vui lòng chọn ngày sinh.'),
                                                     is_within_date_range(message="Ngày sinh phải trong khoảng từ 01/01/1900 đến hôm nay.")]},
@@ -499,10 +498,10 @@ STEPS_BY_ID: Dict[int, StepDefinition] = {
         'render_func': render_generic_step, 'needs_clearance': None,
         'fields': [
             {'field': AppSchema.EDUCATION_HIGH_SCHOOL, 'validators': [required_choice("Vui lòng chọn lộ trình học cấp ba.")]},
-            {'field': AppSchema.EDUCATION_HIGHEST, 'validators': [required_choice("Vui lòng chọn bằng cấp cao nhất.")]},
-            {'field': AppSchema.EDUCATION_MAJOR, 'validators': []},
-            {'field': AppSchema.EDUCATION_FORMAT, 'validators': [required_choice("Vui lòng chọn loại hình đào tạo.")]},
-            {'field': AppSchema.FOREIGN_LANGUAGE, 'validators': []},
+            # {'field': AppSchema.EDUCATION_HIGHEST, 'validators': [required_choice("Vui lòng chọn bằng cấp cao nhất.")]},
+            # {'field': AppSchema.EDUCATION_MAJOR, 'validators': []},
+            # {'field': AppSchema.EDUCATION_FORMAT, 'validators': [required_choice("Vui lòng chọn loại hình đào tạo.")]},
+            # {'field': AppSchema.FOREIGN_LANGUAGE, 'validators': []},
         ], 'dataframes': []
     },
     6: {
@@ -521,12 +520,12 @@ STEPS_BY_ID: Dict[int, StepDefinition] = {
     8: {
         'id': 8, 'name': 'parents_basic', 'title': 'Thông tin Bố Mẹ', 'subtitle': 'Thông tin cơ bản về bố và mẹ của bạn.',
         'render_func': render_generic_step, 'needs_clearance': None, 'fields': [], 'dataframes': [],
-        'layout': {'type': 'tabs', 'tabs': {'dad_panel': {'label': 'Thông tin Bố', 'fields': [{'field': AppSchema.DAD_NAME, 'validators': name_validators}, {'field': AppSchema.DAD_AGE, 'validators': age_validators}, {'field': AppSchema.DAD_JOB, 'validators': [required("Vui lòng điền nghề nghiệp của Bố.")]}]}, 'mom_panel': {'label': 'Thông tin Mẹ', 'fields': [{'field': AppSchema.MOM_NAME, 'validators': name_validators}, {'field': AppSchema.MOM_AGE, 'validators': age_validators}, {'field': AppSchema.MOM_JOB, 'validators': [required("Vui lòng điền nghề nghiệp của Mẹ.")]}]}}}
+        'layout': {'type': 'tabs', 'tabs': {'dad_panel': {'label': 'Thông tin Bố', 'fields': [{'field': AppSchema.DAD_NAME, 'validators': [required("Vui lòng điền họ tên Bố")]}, {'field': AppSchema.DAD_AGE, 'validators': age_validators}, {'field': AppSchema.DAD_JOB, 'validators': [required("Vui lòng điền nghề nghiệp của Bố.")]}]}, 'mom_panel': {'label': 'Thông tin Mẹ', 'fields': [{'field': AppSchema.MOM_NAME, 'validators': [required("Vui lòng điền họ tên Mẹ")]}, {'field': AppSchema.MOM_AGE, 'validators': age_validators}, {'field': AppSchema.MOM_JOB, 'validators': [required("Vui lòng điền nghề nghiệp của Mẹ.")]}]}}}
     },
     9: {
         'id': 9, 'name': 'siblings', 'title': 'Anh Chị Em ruột', 'subtitle': 'Kê khai thông tin về các anh, chị, em ruột (nếu có).',
         'render_func': render_generic_step, 'needs_clearance': True, 'fields': [],
-        'dataframes': [{'field': AppSchema.SIBLING_DATAFRAME, 'columns': {'sibling_name': {'label': 'Họ và tên'}, 'sibling_age': {'label': 'Tuổi', 'classes': 'col-2'}, 'sibling_job': {'label': 'Nghề nghiệp'}, 'sibling_address': {'label': 'Nơi ở', 'classes': 'col-3'}}, 'validators': {'sibling_name': [required('Vui lòng điền tên.')], 'sibling_age': [required('Vui lòng điền tuổi.'), match_pattern(NUMERIC_PATTERN, "Tuổi phải là số.")], 'sibling_job': [required('Vui lòng điền nghề nghiệp.')], 'sibling_address': [required('Vui lòng điền địa chỉ.')]}}]
+        'dataframes': [{'field': AppSchema.SIBLING_DATAFRAME, 'columns': {'sibling_name': {'label': 'Họ và tên'}, 'sibling_age': {'label': 'Năm sinh', 'classes': 'col-2'}, 'sibling_job': {'label': 'Nghề nghiệp'}, 'sibling_address': {'label': 'Nơi ở', 'classes': 'col-3'}}, 'validators': {'sibling_name': [required('Vui lòng điền tên.')], 'sibling_age': [required('Vui lòng điền tuổi.'), match_pattern(NUMERIC_PATTERN, "Tuổi phải là số.")], 'sibling_job': [required('Vui lòng điền nghề nghiệp.')], 'sibling_address': [required('Vui lòng điền địa chỉ.')]}}]
     },
     10: {
         'id': 10, 'name': 'spouse_and_children', 'title': 'Vợ/Chồng & Các con', 'subtitle': 'Cung cấp thông tin về gia đình nhỏ của bạn (nếu có).',
@@ -554,7 +553,8 @@ STEPS_BY_ID: Dict[int, StepDefinition] = {
     13: {
         'id': 13, 'name': 'gov_parents_history', 'title': 'Lịch sử Gia đình (chi tiết)', 'subtitle': 'Kê khai chi tiết quá trình hoạt động của bố mẹ qua các thời kỳ.',
         'render_func': render_generic_step, 'needs_clearance': True, 'fields': [], 'dataframes': [],
-        'layout': {'type': 'tabs', 'tabs': {'dad_panel': {'label': 'Thông tin Bố', 'fields': [{'field': AppSchema.DAD_PRE_AUGUST_REVOLUTION, 'validators': [required("Vui lòng điền hoạt động của Bố.")]}, {'field': AppSchema.DAD_DURING_FRENCH_WAR, 'validators': [required("Vui lòng điền hoạt động của Bố.")]}, {'field': AppSchema.DAD_FROM_1955_PRESENT, 'validators': [required("Vui lòng điền hoạt động của Bố.")]}]}, 'mom_panel': {'label': 'Thông tin Mẹ', 'fields': [{'field': AppSchema.MOM_PRE_AUGUST_REVOLUTION, 'validators': [required("Vui lòng điền hoạt động của Mẹ.")]}, {'field': AppSchema.MOM_DURING_FRENCH_WAR, 'validators': [required("Vui lòng điền hoạt động của Mẹ.")]}, {'field': AppSchema.MOM_FROM_1955_PRESENT, 'validators': [required("Vui lòng điền hoạt động của Mẹ.")]}]}}}
+        'layout': {'type': 'tabs', 'tabs': {'dad_panel': {'label': 'Thông tin Bố', 'fields': [{'field': AppSchema.DAD_PRE_AUGUST_REVOLUTION, 'validators': [required("Vui lòng điền hoạt động của Bố.")]}, {'field': AppSchema.DAD_DURING_FRENCH_WAR, 'validators': [required("Vui lòng điền hoạt động của Bố.")]}, {'field': AppSchema.DAD_FROM_1955_PRESENT, 'validators': [required("Vui lòng điền hoạt động của Bố.")]}]}, 
+                                            'mom_panel': {'label': 'Thông tin Mẹ', 'fields': [{'field': AppSchema.MOM_PRE_AUGUST_REVOLUTION, 'validators': [required("Vui lòng điền hoạt động của Mẹ.")]}, {'field': AppSchema.MOM_DURING_FRENCH_WAR, 'validators': [required("Vui lòng điền hoạt động của Mẹ.")]}, {'field': AppSchema.MOM_FROM_1955_PRESENT, 'validators': [required("Vui lòng điền hoạt động của Mẹ.")]}]}}}
     },
     14: {
         'id': 14, 'name': 'health_and_military', 'title': 'Sức khỏe & Quân sự', 'subtitle': 'Thông tin về sức khoẻ và nghĩa vụ quân sự (nếu có).',
@@ -584,7 +584,7 @@ STEPS_BY_ID: Dict[int, StepDefinition] = {
 
 def _get_current_form_template() -> FormTemplate | None:
     """Looks up the blueprint for the user's selected form use case."""
-    user_storage = cast(Dict[str, Any], app.storage.user)
+    user_storage = cast(dict[str, Any], app.storage.user)
     
     # The value stored is now the STRING NAME of the Enum (e.g., 'PRIVATE_SECTOR')
     use_case_value_str = user_storage.get(SELECTED_USE_CASE_KEY)
@@ -601,55 +601,72 @@ def _get_current_form_template() -> FormTemplate | None:
 
 def next_step() -> None:
     """Navigates to the next step based on the selected template's defined sequence."""
-    user_storage = cast(Dict[str, Any], app.storage.user)
-    form_template = _get_current_form_template()
-    if not form_template:
-        # Back to first step
-        user_storage[STEP_KEY] = 0
-        update_step_content.refresh()
-        return 
-
-    step_sequence: List[int] = form_template['step_sequence']
+    user_storage = cast(dict[str, Any], app.storage.user)
     current_step_id: int = cast(int, user_storage.get(STEP_KEY, 0))
 
-    try: 
-        current_index = step_sequence.index(current_step_id)
-        if current_index < len(step_sequence) - 1:
-            next_step_id = step_sequence[current_index+1]
-            user_storage[STEP_KEY] = next_step_id
-            user_storage[FORM_ATTEMPTED_SUBMISSION_KEY] = False
-            user_storage[CURRENT_STEP_ERRORS_KEY] = {}
+    # If we are at the selector step, the "next" step is the *first* in the sequence.
+    if current_step_id == 0:
+        form_template = _get_current_form_template()
+        if form_template and form_template['step_sequence']:
+            user_storage[STEP_KEY] = form_template['step_sequence'][0]
+        else:
+            user_storage[STEP_KEY] = 0 # Fallback
+    else:
+        # If we are in the middle of a sequence, find the next step.
+        form_template = _get_current_form_template()
+        if not form_template:
+            user_storage[STEP_KEY] = 0 # Should not happen, but safe fallback
             update_step_content.refresh()
-    except ValueError:
-        user_storage[STEP_KEY] = step_sequence[0] if step_sequence else 0
-        update_step_content.refresh()
+            return
+
+        step_sequence: list[int] = form_template['step_sequence']
+        try:
+            current_index = step_sequence.index(current_step_id)
+            if current_index < len(step_sequence) - 1:
+                user_storage[STEP_KEY] = step_sequence[current_index + 1]
+            # If it's the last step, we do nothing. The "Next" button shouldn't exist.
+        except ValueError:
+            # If the current step isn't in the sequence, go back to the start.
+            user_storage[STEP_KEY] = 0
+
+    # Reset validation state for the new step
+    user_storage[FORM_ATTEMPTED_SUBMISSION_KEY] = False
+    user_storage[CURRENT_STEP_ERRORS_KEY] = {}
+    update_step_content.refresh()
 
 
 def prev_step() -> None:
-    user_storage = cast(Dict[str, Any], app.storage.user)
+    """Navigates to the previous step in the sequence or back to the selector."""
+    user_storage = cast(dict[str, Any], app.storage.user)
+    current_step_id: int = cast(int, user_storage.get(STEP_KEY, 0))
+
     form_template = _get_current_form_template()
+    if not form_template:
+        user_storage[STEP_KEY] = 0
+        update_step_content.refresh()
+        return
 
-    if form_template:
-        step_sequence: List[int] = form_template['step_sequence']
-        current_step_id: int = cast(int, user_storage.get(STEP_KEY, 0))
+    step_sequence: list[int] = form_template['step_sequence']
+    try:
+        current_index = step_sequence.index(current_step_id)
+        # If we are at the first step of the sequence, "Back" goes to the selector.
+        if current_index == 0:
+            user_storage[STEP_KEY] = 0
+        else:
+            user_storage[STEP_KEY] = step_sequence[current_index - 1]
+    except ValueError:
+        # If current step is not in the sequence (e.g., something went wrong),
+        # always return to the selector step.
+        user_storage[STEP_KEY] = 0
 
-        try: 
-            current_index = step_sequence.index(current_step_id)
-            if current_index > 0:
-                prev_step_id = step_sequence[current_index-1]
-                user_storage[STEP_KEY] = prev_step_id
-                user_storage[FORM_ATTEMPTED_SUBMISSION_KEY] = False
-                user_storage[CURRENT_STEP_ERRORS_KEY] = {}
-                update_step_content.refresh()
-        except ValueError:
-            pass 
-    # Fallback: If anything is wrong, go to the selector step.
-    user_storage[STEP_KEY] = 0
+    # Reset validation state for the new step
+    user_storage[FORM_ATTEMPTED_SUBMISSION_KEY] = False
+    user_storage[CURRENT_STEP_ERRORS_KEY] = {}
     update_step_content.refresh()
  
 @ui.refreshable
 def update_step_content() -> None:
-    user_storage = cast(Dict[str, Any], app.storage.user)
+    user_storage = cast(dict[str, Any], app.storage.user)
     current_step_id: int = user_storage.get(STEP_KEY, 0)
     # Find the correct step definition from the blueprint
     step_to_render = STEPS_BY_ID.get(current_step_id)
@@ -666,13 +683,10 @@ def update_step_content() -> None:
 # ===================================================================
 @ui.page('/')
 def main_page() -> None:
-    user_storage = cast(Dict[str, Any], app.storage.user)
+    user_storage = cast(dict[str, Any], app.storage.user)
     if not user_storage:
-        private_sector_enum_name = FormUseCaseType.PRIVATE_SECTOR.name # Get 'PRIVATE_SECTOR'
-        user_storage[SELECTED_USE_CASE_KEY] = private_sector_enum_name
-        
-        # Start on the first step of the private sector sequence
-        user_storage[STEP_KEY] = FORM_TEMPLATE_REGISTRY[FormUseCaseType.PRIVATE_SECTOR]['step_sequence'][0]
+        user_storage[STEP_KEY] = 0
+        user_storage[SELECTED_USE_CASE_KEY] = None
         
         user_storage[FORM_ATTEMPTED_SUBMISSION_KEY] = False
         user_storage[CURRENT_STEP_ERRORS_KEY] = {}

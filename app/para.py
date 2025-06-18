@@ -1,6 +1,4 @@
-from typing import List
-
-degrees: List[str] = [
+degrees: list[str] = [
     "Không có",
     "Trung học cơ sở",
     "Trung học phổ thông",
@@ -18,14 +16,14 @@ degrees: List[str] = [
     "Văn bằng 2"
 ]
 
-education_format: List[str] = [
+education_format: list[str] = [
     "Chính quy",
     "Tại chức",
     "Từ xa",
     "Liên thông"
 ]
 
-education_high_school: List[str] = [
+education_high_school: list[str] = [
     '12/12',
     '11/12',
     '10/12',
@@ -42,7 +40,7 @@ education_high_school: List[str] = [
 ]
 
 
-ethnic_groups_vietnam: List[str] = [
+ethnic_groups_vietnam: list[str] = [
     "Kinh",
     "Tày",
     "Thái",
@@ -100,7 +98,7 @@ ethnic_groups_vietnam: List[str] = [
     "Không rõ (Unknown)"
 ]
 
-religion: List[str] = [
+religion: list[str] = [
     "Không",                   # No religion
     "Phật giáo",               # Buddhism
     "Công giáo",               # Catholicism (Roman Catholic)
@@ -123,7 +121,7 @@ religion: List[str] = [
     "Khác (Other – Ghi rõ)"    # Other – Please specify
 ]
 
-social_standing: List[str] = [
+social_standing: list[str] = [
     "Công chức",          # state civil servant
     "Viên chức",          # public-service employee
     "Công nhân",          # industrial/blue-collar worker
@@ -140,7 +138,7 @@ social_standing: List[str] = [
     "Chưa có việc làm",   # currently unemployed
 ]
 
-family_standing: List[str] = [
+family_standing: list[str] = [
     "Nông dân",        # generic farmer (covers đa số rural households)
     "Trung nông",      # middle-income farmer
     "Bần nông",        # poor peasant
@@ -157,7 +155,7 @@ family_standing: List[str] = [
     "Tư sản",          # capitalist / entrepreneur family
 ]
 
-politics: List[str] = [
+politics: list[str] = [
     "Chưa học",
     "Sơ cấp",
     "Trung cấp",
@@ -165,7 +163,7 @@ politics: List[str] = [
     "Cử nhân"
 ]
 
-work_position: List[str] = [
+work_position: list[str] = [
     "Thực tập",            # Intern
     "Nhân viên",           # Staff/Employee
     "Tổ trưởng",           # Team Leader
@@ -187,7 +185,8 @@ work_position: List[str] = [
     "Khác (Other – Ghi rõ)"
 ]
 
-awards_titles: List[str] = [                           
+awards_titles: list[str] = [   
+    'Không có',                        
     # State Honors
     "Nhà giáo ưu tú",             # Distinguished Teacher
     "Nhà giáo nhân dân",          # People's Teacher

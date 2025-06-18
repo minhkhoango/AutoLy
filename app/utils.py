@@ -3,14 +3,14 @@ from __future__ import annotations
 from nicegui import ui, app
 from nicegui.element import Element
 from datetime import datetime, date
-from typing import Any, Callable, Dict, List, NotRequired, Optional, Union, Tuple, TypeAlias, TypedDict, cast
+from typing import Any, NotRequired, TypeAlias, TypedDict, cast
+from collections.abc import Callable
 from dataclasses import dataclass
 import para # Assuming para.py exists and might be used for defaults
 from form_data_builder import FORM_TEMPLATE_REGISTRY, FormUseCaseType
 
 # --- Type Aliases ---
-ValidationFuncType: TypeAlias = Callable[[Any], Tuple[bool, str]]
-
+ValidationFuncType: TypeAlias = Callable[[Any], tuple[bool, str]]
 
 # --- New Session Key ---
 SELECTED_USE_CASE_KEY: str = 'selected_use_case' # <-- Add this new key
@@ -22,12 +22,12 @@ class FormField:
     key: str
     label: str
     ui_type: str = 'text'
-    pdf_map: Optional[Union[str, List[str]]] = None
-    options: Optional[Union[List[str], Dict[str, str]]] = None
+    pdf_map: (str | list[str]) | None = None
+    options: (list[str] | dict[str, str]) | None = None
     split_date: bool = True
-    date_min_max: Optional[Tuple[Optional[date], Optional[date]]] = None
-    select_display_key: Optional[str] = None
-    select_value_key: Optional[str] = None
+    date_min_max: tuple[(date | None), (date | None)] | None = None
+    select_display_key: str | None = None
+    select_value_key: str | None = None
     default_value: Any = ''
 
 class DataframePDFColumn(TypedDict):
@@ -35,7 +35,7 @@ class DataframePDFColumn(TypedDict):
     key: str # The key from the form's dataframe row (work_task)
     pdf_field_prefix: str # The predfix for the pdf field (work_task_)
     # The magic 
-    transformer: NotRequired[Callable[[Dict[str, Any]], str]]
+    transformer: NotRequired[Callable[[dict[str, Any]], str]]
 
 # --- APPLICATION SCHEMA DEFINITION ---
 class AppSchema:
@@ -112,11 +112,11 @@ class AppSchema:
 
     # Step 9 (basic parents info)
     DAD_NAME = FormField(key='dad_name', label='Họ tên Bố', pdf_map='dad_name', default_value='')
-    DAD_AGE = FormField(key='dad_age', label='Tuổi Bố', pdf_map='dad_age', default_value='')
+    DAD_AGE = FormField(key='dad_dob_year', label='Năm sinh Bố', pdf_map='dad_dob_year', default_value='')
     DAD_JOB = FormField(key='dad_job', label='Nghề nghiệp Bố', pdf_map='dad_job', default_value='')
 
     MOM_NAME = FormField(key='mom_name', label='Họ tên Mẹ', pdf_map='mom_name', default_value='')
-    MOM_AGE = FormField(key='mom_age', label='Tuổi Mẹ', pdf_map='mom_age', default_value='')
+    MOM_AGE = FormField(key='mom_dob_year', label='Năm sinh Mẹ', pdf_map='mom_dob_year', default_value='')
     MOM_JOB = FormField(key='mom_job', label='Nghề nghiệp Mẹ', pdf_map='mom_job', default_value='')
 
 
@@ -195,7 +195,7 @@ class AppSchema:
 
     # --- DATAFRAME-TO-PDF BLUEPRINTS ---
     # This is the new source of truth for mapping the work history dataframe
-    WORK_DATAFRAME_PDF_MAPPING: List[DataframePDFColumn] = [
+    WORK_DATAFRAME_PDF_MAPPING: list[DataframePDFColumn] = [
         {
             'key': 'work_from',
             'pdf_field_prefix': 'work_from_to_',
@@ -205,7 +205,7 @@ class AppSchema:
         {'key': 'work_unit', 'pdf_field_prefix': 'work_unit_'},
         {'key': 'work_role', 'pdf_field_prefix': 'work_role_'},
     ]
-    SIBLING_DATAFRAME_PDF_MAPPING: List[DataframePDFColumn] = [
+    SIBLING_DATAFRAME_PDF_MAPPING: list[DataframePDFColumn] = [
         {'key': 'sibling_name',
          'pdf_field_prefix': 'sibling_name_age_job_',
          'transformer': lambda row: (
@@ -217,14 +217,14 @@ class AppSchema:
          {'key': 'sibling_address', 'pdf_field_prefix': 'sibling_address_'},
         #  {'key': 'sibling_political_level', 'pdf_field_prefix': 'sibling_political_level_'},
     ]
-    CHILD_DATAFRAME_PDF_MAPPING: List[DataframePDFColumn] = [
+    CHILD_DATAFRAME_PDF_MAPPING: list[DataframePDFColumn] = [
         {'key': 'child_name', 'pdf_field_prefix': 'child_name_'},
         {'key': 'child_age', 'pdf_field_prefix': 'child_age_'},
         {'key': 'child_job', 'pdf_field_prefix': 'child_job_'},
     ]
 
     @classmethod
-    def get_all_fields(cls) -> List[FormField]:
+    def get_all_fields(cls) -> list[FormField]:
         return [
             field for field in cls.__dict__.values()
             if isinstance(field, FormField)
@@ -241,31 +241,37 @@ NEEDS_CLEARANCE_KEY: str = 'needs_clearance'
 FORM_ATTEMPTED_SUBMISSION_KEY: str = 'form_attempted_submission'
 CURRENT_STEP_ERRORS_KEY: str = 'current_step_errors'
 
+# Max rows
+WORK_HISTORY_MAX_ROWS: int = 4
+SIBLING_MAX_ROWS: int = 3
+CHILD_MAX_ROWS: int = 5
+
 PDF_TEMPLATE_PATH: str = "assets/TEMPLATE-Arial.pdf" # Ensure this path is correct
 PDF_FILENAME: str = "SoYeuLyLich_DaDien.pdf"
 
 # --- DECOMPOSED UI CREATION HELPERS ---
-def get_form_data() -> Dict[str, Any]:
+def get_form_data() -> dict[str, Any]:
     """Safely retrieves the form_data dictionary from user storage."""
-    user_storage = cast(Dict[str, Any], app.storage.user)
+    user_storage = cast(dict[str, Any], app.storage.user)
     if not isinstance(user_storage.get(FORM_DATA_KEY), dict):
         user_storage[FORM_DATA_KEY] = {}
-    return cast(Dict[str, Any], user_storage[FORM_DATA_KEY])
+    return cast(dict[str, Any], user_storage[FORM_DATA_KEY])
 
-def _create_text_input(field: FormField, current_value: Any) -> Element:
+def _create_text_input(field: FormField, current_value: Any, error_msg: str | None) -> Element:
     return ui.input(
         label=field.label,
         value=str(current_value),
         on_change=lambda e, k=field.key: get_form_data().update({k: e.value})
-    ).classes('full-width').props(f"outlined dense ")
+    ).classes('full-width').props(f"outlined dense")
 
-def _create_select_input(field: FormField, current_value: Any) -> Element:
+def _create_select_input(field: FormField, current_value: Any, error_msg: str | None) -> Element:
     select_el = ui.select(
         options=field.options or [],
         label=field.label,
         value=current_value,
         on_change=lambda e, k=field.key: get_form_data().update({k: e.value})
     ).classes('full-width').props(f"outlined dense")
+
 
     if field.options and isinstance(field.options, list) and len(field.options) > 0 and isinstance(field.options[0], dict):
         if field.select_display_key:
@@ -274,22 +280,19 @@ def _create_select_input(field: FormField, current_value: Any) -> Element:
             select_el.props(f"option-value='{field.select_value_key}'")
     return select_el
 
-def _create_radio_input(field: FormField, current_value: Any) -> Element:
+def _create_radio_input(field: FormField, current_value: Any, error_msg: str | None) -> Element:
     """Creates a standard ui.radio element."""
-    # --- DEBUGGING ---
-    print(f"Creating radio for key: '{field.key}' with value: {current_value} (type: {type(current_value)}) and options: {field.options}")
-    # --- END DEBUGGING ---
-    #  
     with ui.column().classes('q-gutter-y-xs'):
         ui.label(field.label).classes('text-caption')
         radio_el = ui.radio(
             options=field.options or [],
             value=str(current_value) if current_value is not None else None,
             on_change=lambda e, k=field.key: get_form_data().update({k: e.value})
-        ).props("inline")
+        ).props(f"outlined dense")
+
     return radio_el
 
-def _create_date_input(field: FormField, current_value: Any) -> Element:
+def _create_date_input(field: FormField, current_value: Any, error_msg: str | None) -> Element:
     """
     Creates a robust, 3-field date input (Day, Month, Year) for unambiguous entry.
     This is the most reliable method, avoiding all popup/CSS issues.
@@ -358,14 +361,15 @@ def _create_date_input(field: FormField, current_value: Any) -> Element:
     # Return the main row container.
     return container
 
-def _create_textarea_input(field: FormField, current_value: Any) -> Element:
+def _create_textarea_input(field: FormField, current_value: Any, error_msg: str | None) -> Element:
     return ui.textarea(
         label=field.label,
         value=str(current_value),
         on_change=lambda e, k=field.key: get_form_data().update({k: e.value})
     ).classes('full-width').props(f"outlined dense")
 
-def _create_checkbox_input(field: FormField, current_value: Any) -> Element:
+
+def _create_checkbox_input(field: FormField, current_value: Any, error_msg: str | None) -> Element:
     """Creates a checkbox input that properly displays validation errors."""
 
     with ui.column().classes('q-gutter-y-xs'):
@@ -373,7 +377,8 @@ def _create_checkbox_input(field: FormField, current_value: Any) -> Element:
             text=field.label,
             value=bool(current_value),
             on_change=lambda e, k=field.key: get_form_data().update({k: e.value})
-        )
+        ).props(f"outlined dense")
+
     return checkbox
 
 def create_field(field_definition: FormField) -> Element:
@@ -382,10 +387,16 @@ def create_field(field_definition: FormField) -> Element:
     This is a dispatcher, delegating to specialized _create_* functions.
     It NO LONGER returns a validator entry.
     """
+    user_storage = cast(dict[str, Any], app.storage.user)
     form_data = get_form_data()
     current_value = form_data.get(field_definition.key)
 
-    creator_map: Dict[str, Callable[[FormField, Any], Element]] = {
+    # Get the error state for this specific field
+    form_attempted: bool = user_storage.get(FORM_ATTEMPTED_SUBMISSION_KEY, False)
+    current_errors: dict[str, str] = user_storage.get(CURRENT_STEP_ERRORS_KEY, {})
+    error_message: str | None = current_errors.get(field_definition.key) if form_attempted else None
+
+    creator_map: dict[str, Callable[[FormField, Any, str | None], Element]] = {
         'text': _create_text_input,
         'select': _create_select_input,
         'radio': _create_radio_input,
@@ -398,7 +409,7 @@ def create_field(field_definition: FormField) -> Element:
     if not creator:
         raise ValueError(f"Unsupported UI type: {field_definition.ui_type}")
     
-    element = creator(field_definition, current_value)
+    element = creator(field_definition, current_value, error_message)
     return element
 
 # --- Helper to initialize form_data structure ---
@@ -417,7 +428,7 @@ def initialize_form_data() -> None:
     form_data[AppSchema.CHILD_DATAFRAME.key] = []
 
 # --- PDF Data Mapping Utility ---
-def _split_date_for_pdf(date_str: Optional[str]) -> Tuple[str, str, str]:
+def _split_date_for_pdf(date_str: str | None) -> tuple[str, str, str]:
     """Helper to parse a date string (YYYY-MM-DD) and split into d, m, y for PDF."""
     if not date_str:
         return '', '', ''
@@ -428,9 +439,9 @@ def _split_date_for_pdf(date_str: Optional[str]) -> Tuple[str, str, str]:
         return '', '', ''
 
 def _map_dataframe_to_pdf(
-    pdf_data: Dict[str, Any],
-    dataframe: List[Dict[str, str]],
-    column_map: List[DataframePDFColumn],
+    pdf_data: dict[str, Any],
+    dataframe: list[dict[str, str]],
+    column_map: list[DataframePDFColumn],
     max_entries: int
 ) -> None:
     """Generic helper to map a list of dicts to indexed PDF fields."""
@@ -452,13 +463,13 @@ def _map_dataframe_to_pdf(
                 pdf_field_name = f"{column_rule['pdf_field_prefix']}{pdf_index}"
                 pdf_data[pdf_field_name] = ''
 
-def generate_pdf_data_mapping() -> Dict[str, Any]:
+def generate_pdf_data_mapping() -> dict[str, Any]:
     """
     Transforms app data into a PDF-ready dictionary by dynamically
     iterating through the AppSchema. No more hardcoding.
     """
     form_data = get_form_data()
-    pdf_data: Dict[str, Any] = {}
+    pdf_data: dict[str, Any] = {}
 
     # 1. Map all simple fields defined in AppSchema
     for field in AppSchema.get_all_fields():
@@ -468,7 +479,7 @@ def generate_pdf_data_mapping() -> Dict[str, Any]:
         value = form_data.get(field.key)
 
         if field.ui_type == 'date' and isinstance(field.pdf_map, list) and field.split_date==True:
-            day, month, year = _split_date_for_pdf(cast(Optional[str], value))
+            day, month, year = _split_date_for_pdf(cast(str | None, value))
             pdf_data[field.pdf_map[0]] = day
             pdf_data[field.pdf_map[1]] = month
             pdf_data[field.pdf_map[2]] = year
@@ -482,23 +493,23 @@ def generate_pdf_data_mapping() -> Dict[str, Any]:
     # 2. Map the dataframes (work, siblings, children)
     _map_dataframe_to_pdf(
         pdf_data=pdf_data,
-        dataframe=cast(List[Dict[str, str]], form_data.get(AppSchema.WORK_DATAFRAME.key, [])),
+        dataframe=cast(list[dict[str, str]], form_data.get(AppSchema.WORK_DATAFRAME.key, [])),
         column_map=AppSchema.WORK_DATAFRAME_PDF_MAPPING,
-        max_entries=5
+        max_entries=WORK_HISTORY_MAX_ROWS
     )
-    
+
     _map_dataframe_to_pdf(
         pdf_data=pdf_data,
-        dataframe=cast(List[Dict[str, str]], form_data.get(AppSchema.SIBLING_DATAFRAME.key, [])),
+        dataframe=cast(list[dict[str, str]], form_data.get(AppSchema.SIBLING_DATAFRAME.key, [])),
         column_map=AppSchema.SIBLING_DATAFRAME_PDF_MAPPING,
-        max_entries=5
+        max_entries=SIBLING_MAX_ROWS
     )
-    
+
     _map_dataframe_to_pdf(
         pdf_data=pdf_data,
-        dataframe=cast(List[Dict[str, str]], form_data.get(AppSchema.CHILD_DATAFRAME.key, [])),
+        dataframe=cast(list[dict[str, str]], form_data.get(AppSchema.CHILD_DATAFRAME.key, [])),
         column_map=AppSchema.CHILD_DATAFRAME_PDF_MAPPING,
-        max_entries=5
+        max_entries=CHILD_MAX_ROWS
     )
 
     return pdf_data
