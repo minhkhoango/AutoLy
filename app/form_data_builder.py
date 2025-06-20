@@ -1,7 +1,7 @@
 from __future__ import annotations
 from enum import Enum, auto
 from typing import TypedDict
-
+from pathlib import Path
 # ===================================================================
 # 1. DEFINE THE "PRODUCTS" - OUR DOSSIER TYPES
 # ===================================================================
@@ -28,6 +28,9 @@ class FormTemplate(TypedDict):
     # The offical form name, for reference or future use.
     gov_form_code: str | None
 
+    pdf_template_path: str | Path  # Path to the specific PDF template file
+    dataframe_page_map: dict[str, int]  # Maps dataframe keys to page numbers
+
 # ===================================================================
 # 3. BUILD THE "FACTORY" - THE REGISTRY OF ALL BLUEPRINTS
 # ===================================================================
@@ -42,11 +45,14 @@ FORM_TEMPLATE_REGISTRY: dict[FormUseCaseType, FormTemplate] = {
         'gov_form_code': None,
         'step_sequence': [
             # Core Info
-            1, 3, 5, 6, 7, 8,
-            # Basic Family Info
-            9, 
+            1, 3, 5, 6, 7, 
             # Review
             16,
         ],
+        'pdf_template_path': 'assets/TEMPLATE-PRIVATE.pdf',
+        'dataframe_page_map': {
+            'training_dataframe': 2,
+            'work_dataframe': 2, 
+        }
     },
 }

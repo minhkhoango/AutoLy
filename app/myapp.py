@@ -15,13 +15,18 @@ from validation import (
     ValidatorFunc,
     required, required_choice, match_pattern, is_within_date_range, is_date_after
 )
-from fillpdf import fillpdfs  # type: ignore[import]
+from reportlab.pdfgen import canvas
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+from pypdf import PdfReader, PdfWriter
 import tempfile
-import os
+import io
 from pathlib import Path
+import os
 from typing_extensions import NotRequired
 import re
 from re import Pattern
+import datetime
 
 # Import the new, powerful schema and utilities
 from form_data_builder import FormUseCaseType, FormTemplate, FORM_TEMPLATE_REGISTRY
@@ -29,8 +34,7 @@ from utils import (
     AppSchema, FormField,
     STEP_KEY, FORM_DATA_KEY, SELECTED_USE_CASE_KEY, # <-- ADD THIS
     FORM_ATTEMPTED_SUBMISSION_KEY, CURRENT_STEP_ERRORS_KEY,
-    PDF_TEMPLATE_PATH, PDF_FILENAME,
-    create_field, initialize_form_data, generate_pdf_data_mapping, get_form_data
+    create_field, initialize_form_data, get_form_data
 )
 
 # --- Modernized Type Aliases ---
@@ -215,55 +219,196 @@ async def _handle_step_confirmation(button: ui.button) -> None:
     finally:
         button.enable()
 
-async def create_and_download_pdf(button: ui.button) -> None:
+### RENDER PDF FUNCTION ###
+def render_text_on_pdf(
+    template_path: str | Path,
+    form_data: dict[str, Any],
+    form_template: FormTemplate,
+    output_path: str | Path,
+) -> None:
     """
-    Orchestrates PDF generation using the utility mapping function
-    and handles NiceGUI interactions (storage, notifications, download).
+    The new rendering engine. It draws text onto a multi-page PDF based
+    on coordinates defined in AppSchema and page mappings in the FormTemplate.
     """
+    FONT_PATH: Path = Path("./fonts/NotoSans-Regular.ttf") # Make sure this font exists
+    FONT_NAME: str = "NotoSans"
+    FONT_SIZE: int = 10
+    LINE_HEIGHT: int = 25 # For dataframe rows
 
+    if not FONT_PATH.exists():
+        raise FileNotFoundError(f"Font not found at {FONT_PATH}")
+    
+    try:
+        pdfmetrics.registerFont(TTFont(FONT_NAME, FONT_PATH))
+    except Exception:
+        pass # Font already registered
+
+    template_pdf = PdfReader(template_path)
+    output_writer = PdfWriter()
+
+    # Create an overlay for each page that needs text
+    overlays: dict[int, io.BytesIO] = {}
+
+    def get_or_create_canvas(page_num: int) -> canvas.Canvas:
+        """Manages one canvas per page."""
+        page_index = page_num - 1
+        if page_index not in overlays:
+            overlays[page_index] = io.BytesIO()
+            new_canvas = canvas.Canvas(overlays[page_index], 
+                                        template_pdf.pages[page_index].mediabox)
+            new_canvas.setFont(FONT_NAME, FONT_SIZE)
+            return new_canvas
+        # This part is tricky, might need to re-read the stream. For simplicity, we create one and use it.
+        # A more robust solution might store canvas objects instead of BytesIO streams.
+        # This implementation assumes we process all fields for a page at once.
+        return canvas.Canvas(overlays[page_index], 
+                             pagesize=template_pdf.pages[page_index].mediabox)
+    
+    user_storage = cast(dict[str, Any], app.storage.user)
+    selected_use_case = FormUseCaseType[cast(str, user_storage.get(SELECTED_USE_CASE_KEY))]
+
+    # 1. RENDER SIMPLE FIELDS
+    for field in AppSchema.get_all_fields():
+        if not field.pdf_coords or field.key in form_template['dataframe_page_map']:
+            continue # Skip fields without coords or dataframe fields
+
+        coords = field.pdf_coords.get(selected_use_case)
+        if not coords:
+            continue
+
+        ### Assume all simple fields on page 1 ###
+        can = get_or_create_canvas(page_num=1)
+        value = form_data.get(field.key, '')
+
+        if field.ui_type == 'date' and field.split_date:
+            day, month, year = '', '', ''
+            if value:
+                try: 
+                    dt_obj = datetime.strptime(str(value), '%Y-%m-%d')
+                    day, month, year = dt_obj.strftime('%d'), dt_obj.strftime('%m'), dt_obj.strftime('%Y')
+                except ValueError: 
+                    pass # Let it render empty strings if date is invalid
+
+            # Now, check the format of the coordinates
+            if len(coords) == 2 and isinstance(coords[0], list):
+                typed_coords = cast(tuple[list[float], float], coords)
+                # This is your new format: ([x1, x2, x3], y)
+                x_coords, y = typed_coords
+                if len(x_coords) == 3:
+                    can.drawString(x_coords[0], y, day)
+                    can.drawString(x_coords[1], y, month)
+                    can.drawString(x_coords[2], y, year)
+                else:
+                    print(f"WARNING: Coords for date field '{field.key}' are malformed. Expected 3 X-coordinates.")
+            
+            else:
+                x, y = coords
+                can.drawString(x, y, str(value))
+        
+        # 2. RENDER DATAFRAME FIELDS
+
+        for df_key, page_num in form_template['dataframe_page_map'].items():
+            df_field = getattr(AppSchema, df_key.upper(), None)
+            if not df_field or not df_field.pdf_coords: 
+                continue
+            coords: tuple[float, float] = df_field.pdf_coords.get(selected_use_case)
+            if not coords: 
+                continue
+
+            can = get_or_create_canvas(page_num)
+            start_x, start_y = coords
+
+            dataframe_data = cast(list[dict[str, str]], form_data.get(df_key, []))
+
+             # This is a simple example for the work dataframe. You'll need to make this more generic
+            # or have specific logic for each dataframe type.
+            if df_key == AppSchema.WORK_DATAFRAME.key:
+                for i, row in enumerate(dataframe_data):
+                    y_pos = start_y - (i * LINE_HEIGHT)
+                    from_to = f"{row.get('work_from','')} - {row.get('work_to','')}"
+                    unit = row.get('work_unit', '')
+                    role = row.get('work_role', '')
+                    can.drawString(start_x, y_pos, from_to)
+                    can.drawString(start_x + 150, y_pos, unit) # Adjust x spacing
+                    can.drawString(start_x + 350, y_pos, role) # Adjust x spacing
+
+            if df_key == AppSchema.TRAINING_DATAFRAME.key:
+                for i, row in enumerate(dataframe_data):
+                    y_pos = start_y - (i * LINE_HEIGHT)
+                    from_to = f"{row.get('training_from','')} - {row.get('training_to','')}"
+                    unit = row.get('training_unit', '')
+                    field = row.get('training_field', '')
+                    cert = row.get('training_certificate', '')
+                    can.drawString(start_x, y_pos, from_to)
+                    can.drawString(start_x + 150, y_pos, unit)
+                    can.drawString(start_x + 300, y_pos, field)
+                    can.drawString(start_x + 400, y_pos, cert)
+
+    # Save all canvases
+    for overlay in overlays.values():
+        c = canvas.Canvas(overlay)
+        c.save()
+
+    # Merge overlays with the template
+    for page_index, overlay_stream in overlays.items():
+        overlay_stream.seek(0)
+        overlay_pdf = PdfReader(overlay_stream)
+        page = template_pdf.pages[page_index]
+        page.merge_page(overlay_pdf.pages[0])
+    
+    output_writer.append(template_pdf)
+    
+    with open(output_path, "wb") as f:
+        output_writer.write(f)
+
+async def create_and_download_pdf(button: ui.button) -> None:
+    """Orchestrates PDF generation using the direct rendering method."""
     button.disable()
     try:
         user_storage = cast(dict[str, Any], app.storage.user)
-        if FORM_DATA_KEY not in user_storage or not user_storage[FORM_DATA_KEY]:
-            ui.notify("Chưa có dữ liệu để tạo PDF. Vui lòng điền thông tin.", type='warning')
-            return
+        form_data = get_form_data()
         
-        # Call the utility function to get the mapped data
-        data_to_fill_pdf: dict[str, Any] = generate_pdf_data_mapping()
+        selected_use_case_name = user_storage.get(SELECTED_USE_CASE_KEY)
+        if not selected_use_case_name:
+            ui.notify("Lỗi: Không xác định được loại hồ sơ.", type='negative')
+            return
 
-        output_pdf_path_str: str | None = None
-        try:
-            if not os.path.exists(PDF_TEMPLATE_PATH):
-                ui.notify(f"Lỗi nghiêm trọng: Không tìm thấy file mẫu PDF tại '{PDF_TEMPLATE_PATH}'. \
-                        Vui lòng kiểm tra lại cấu hình.", multi_line=True, close_button=True)
-                return
+        selected_use_case = FormUseCaseType[selected_use_case_name]
+        form_template = FORM_TEMPLATE_REGISTRY.get(selected_use_case)
 
-            with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmpfile_obj:
-                output_pdf_path_str = tmpfile_obj.name
-            
-            fillpdfs.write_fillable_pdf(    # type: ignore
-                input_pdf_path=PDF_TEMPLATE_PATH,
-                output_pdf_path=output_pdf_path_str,
-                data_dict=data_to_fill_pdf,
-                flatten=True
-            )
-            pdf_content_bytes: bytes = Path(output_pdf_path_str).read_bytes()
-            ui.download(src=pdf_content_bytes, filename=PDF_FILENAME)
-            ui.notify("Đã tạo PDF thành công! Kiểm tra mục tải xuống của bạn.", type='positive', close_button=True)
+        if not form_template:
+            ui.notify("Lỗi: Không tìm thấy blueprint cho hồ sơ.", type='negative')
+            return
 
-        except FileNotFoundError:
-            ui.notify(f"Lỗi: File mẫu PDF '{PDF_TEMPLATE_PATH}' không tồn tại.", multi_line=True, close_button=True)
-        except Exception as e:
-            print(f"Lỗi nghiêm trọng khi tạo PDF: {e}")
-            import traceback
-            traceback.print_exc()
-            ui.notify(f"Đã xảy ra lỗi khi tạo PDF. Vui lòng thử lại hoặc liên hệ quản trị viên. Chi tiết: {e}", 
-                    type='negative', multi_line=True, close_button=True)
-        finally:
-            if output_pdf_path_str and os.path.exists(output_pdf_path_str):
-                try: os.remove(output_pdf_path_str)
-                except Exception as e_del: print(f"Lỗi khi xóa file tạm '{output_pdf_path_str}': {e_del}")
-    finally: button.enable()
+        template_path = form_template['pdf_template_path']
+        if not os.path.exists(template_path):
+            ui.notify(f"Lỗi: Không tìm thấy file mẫu PDF tại '{template_path}'.", type='negative')
+            return
+
+        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmpfile_obj:
+            output_pdf_path_str = tmpfile_obj.name
+        
+        render_text_on_pdf(
+            template_path=template_path,
+            form_data=form_data,
+            form_template=form_template,
+            output_path=output_pdf_path_str
+        )
+
+        pdf_content_bytes: bytes = Path(output_pdf_path_str).read_bytes()
+        ui.download(src=pdf_content_bytes, filename="SoYeuLyLich_DaDien.pdf")
+        ui.notify("Đã tạo PDF thành công!", type='positive')
+
+    except Exception as e:
+        print(f"Lỗi nghiêm trọng khi tạo PDF: {e}")
+        import traceback
+        traceback.print_exc()
+        ui.notify(f"Đã xảy ra lỗi khi tạo PDF. Chi tiết: {e}", type='negative', multi_line=True)
+    finally:
+        button.enable()
+        if 'output_pdf_path_str' in locals() and os.path.exists(output_pdf_path_str):
+            try: os.remove(output_pdf_path_str)
+            except Exception as e_del: print(f"Lỗi khi xóa file tạm: {e_del}")
 
 
 # ===================================================================
@@ -490,24 +635,39 @@ STEPS_BY_ID: dict[int, StepDefinition] = {
         'fields': [
             {'field': AppSchema.ETHNICITY, 'validators': [required_choice("Vui lòng chọn dân tộc.")]},
             {'field': AppSchema.RELIGION, 'validators': [required_choice("Vui lòng chọn tôn giáo.")]},
-            {'field': AppSchema.PLACE_OF_ORIGIN, 'validators': [required("Vui lòng điền nguyên quán.")]},
+            # {'field': AppSchema.PLACE_OF_ORIGIN, 'validators': [required("Vui lòng điền nguyên quán.")]},
         ], 'dataframes': []
     },
     5: {
-        'id': 5, 'name': 'education', 'title': 'Học vấn & Chuyên môn', 'subtitle': 'Quá trình học tập đã định hình nên con người bạn.',
+        'id': 5, 'name': 'education', 'title': 'Học vấn & Chuyên môn', 'subtitle': 'Quá trình học tập, đào tạo định hình nên con người bạn.',
         'render_func': render_generic_step, 'needs_clearance': None,
         'fields': [
             {'field': AppSchema.EDUCATION_HIGH_SCHOOL, 'validators': [required_choice("Vui lòng chọn lộ trình học cấp ba.")]},
-            # {'field': AppSchema.EDUCATION_HIGHEST, 'validators': [required_choice("Vui lòng chọn bằng cấp cao nhất.")]},
-            # {'field': AppSchema.EDUCATION_MAJOR, 'validators': []},
-            # {'field': AppSchema.EDUCATION_FORMAT, 'validators': [required_choice("Vui lòng chọn loại hình đào tạo.")]},
-            # {'field': AppSchema.FOREIGN_LANGUAGE, 'validators': []},
-        ], 'dataframes': []
+        ], 
+        'dataframes': [{'field': AppSchema.TRAINING_DATAFRAME, 'columns': {'training_from': {'label': 'Từ (MM/YYYY)', 'props': 'dense outlined mask="##/####"'}, 
+                                                                           'training_to': {'label': 'Đến (MM/YYYY)', 'props': 'dense outlined mask="##/####"'}, 
+                                                                           'training_unit': {'label': 'Tên trường hoặc cơ sở đào tạo'}, 
+                                                                           'training_field': {'label': 'Ngành học'},
+                                                                           'training_format': {'label': 'Hình thức đào tạo'},
+                                                                           'training_certificate': {'label': 'Văn bằng chứng chỉ'}}, 
+                                                                           'validators': {'training_from': [required('Vui lòng điền thời gian bắt đầu.'), match_pattern(DATE_MMYYYY_PATTERN, 'Dùng định dạng MM/YYYY')], 
+                                                                                      'training_to': [required('Vui lòng điền thời gian kết thúc.'), match_pattern(DATE_MMYYYY_PATTERN, 'Dùng định dạng MM/YYYY'), is_date_after('work_from', 'Ngày kết thúc phải sau ngày bắt đầu.')], 
+                                                                                      'training_unit': [required('Vui lòng điền tên trường hoặc cơ sở đào tạo.')], 
+                                                                                      'training_field': [required('Vui lòng điền ngành học.')],
+                                                                                      'training_format': [required('Vui lòng điền hình thức đào tạo.')],
+                                                                                      'training_certificate': [required('Vui lòng điền văn bằng chứng chỉ.')]}}]
     },
     6: {
         'id': 6, 'name': 'work_history', 'title': 'Quá trình Công tác', 'subtitle': 'Liệt kê quá trình làm việc, bắt đầu từ gần nhất.',
         'render_func': render_generic_step, 'needs_clearance': None, 'fields': [],
-        'dataframes': [{'field': AppSchema.WORK_DATAFRAME, 'columns': {'work_from': {'label': 'Từ (MM/YYYY)', 'props': 'dense outlined mask="##/####"'}, 'work_to': {'label': 'Đến (MM/YYYY)', 'props': 'dense outlined mask="##/####"'}, 'work_task': {'label': 'Nhiệm vụ', 'classes': 'col-3'}, 'work_unit': {'label': 'Đơn vị'}, 'work_role': {'label': 'Chức vụ'}}, 'validators': {'work_from': [required('Vui lòng điền thời gian bắt đầu.'), match_pattern(DATE_MMYYYY_PATTERN, 'Dùng định dạng MM/YYYY')], 'work_to': [required('Vui lòng điền thời gian kết thúc.'), match_pattern(DATE_MMYYYY_PATTERN, 'Dùng định dạng MM/YYYY'), is_date_after('work_from', 'Ngày kết thúc phải sau ngày bắt đầu.')], 'work_task': [required('Vui lòng điền công việc.')], 'work_unit': [required('Vui lòng điền đơn vị.')], 'work_role': [required('Vui lòng điền chức vụ.')]}}]
+        'dataframes': [{'field': AppSchema.WORK_DATAFRAME, 'columns': {'work_from': {'label': 'Từ (MM/YYYY)', 'props': 'dense outlined mask="##/####"'}, 
+                                                                       'work_to': {'label': 'Đến (MM/YYYY)', 'props': 'dense outlined mask="##/####"'}, 
+                                                                       'work_unit': {'label': 'Đơn vị'}, 
+                                                                       'work_role': {'label': 'Chức vụ'}}, 
+                                                                       'validators': {'work_from': [required('Vui lòng điền thời gian bắt đầu.'), match_pattern(DATE_MMYYYY_PATTERN, 'Dùng định dạng MM/YYYY')], 
+                                                                                      'work_to': [required('Vui lòng điền thời gian kết thúc.'), match_pattern(DATE_MMYYYY_PATTERN, 'Dùng định dạng MM/YYYY'), is_date_after('work_from', 'Ngày kết thúc phải sau ngày bắt đầu.')], 
+                                                                                      'work_unit': [required('Vui lòng điền đơn vị.')], 
+                                                                                      'work_role': [required('Vui lòng điền chức vụ.')]}}]
     },
     7: {
         'id': 7, 'name': 'awards', 'title': 'Khen thưởng & Kỷ luật', 'subtitle': 'Liệt kê các khen thưởng hoặc kỷ luật đáng chú ý.',

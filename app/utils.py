@@ -8,6 +8,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 import para # Assuming para.py exists and might be used for defaults
 from form_data_builder import FORM_TEMPLATE_REGISTRY, FormUseCaseType
+from pathlib import Path
 
 # --- Type Aliases ---
 ValidationFuncType: TypeAlias = Callable[[Any], tuple[bool, str]]
@@ -29,6 +30,7 @@ class FormField:
     select_display_key: str | None = None
     select_value_key: str | None = None
     default_value: Any = ''
+    pdf_coords: dict[FormUseCaseType, tuple[float, float] | tuple[list[float] | float]] | None = None
 
 class DataframePDFColumn(TypedDict):
     """Defines how to map a single dataframe column """
@@ -38,190 +40,112 @@ class DataframePDFColumn(TypedDict):
     transformer: NotRequired[Callable[[dict[str, Any]], str]]
 
 # --- APPLICATION SCHEMA DEFINITION ---
+# utils.py
+
+# ... (imports and other dataclasses/TypedDicts are unchanged) ...
+
+# --- APPLICATION SCHEMA DEFINITION ---
 class AppSchema:
     """
     The single source of truth for the entire application form.
     Defines all fields, their properties, and their mapping to the PDF.
     """
-    # Step 1
-    FORM_TEMPLATE_SELECTOR = FormField(
-        key='form_template_selector', label='Tổ chức bạn đang nộp hồ sơ cho:',
-        ui_type='radio', 
-        options={use_case.name: template['name'] for use_case, template in FORM_TEMPLATE_REGISTRY.items()},
-        default_value=FormUseCaseType.PRIVATE_SECTOR.name
+    # NOTE: Coordinates are (X, Y) from the bottom-left of the page.
+    # Page 1 Fields
+    FULL_NAME = FormField(key='full_name', label='HỌ VÀ TÊN (viết hoa)', 
+                          pdf_coords={FormUseCaseType.PRIVATE_SECTOR: (160.0, 725.0)})
+    GENDER = FormField(key='gender', label='Giới tính', ui_type='radio', options=['Nam', 'Nữ'], default_value='Nam',
+                       pdf_coords={FormUseCaseType.PRIVATE_SECTOR: (490.0, 725.0)})
+    DOB = FormField(key='dob', label='Ngày sinh', ui_type='date', default_value=None,
+                    pdf_coords={FormUseCaseType.PRIVATE_SECTOR: ([130.0, 180.0, 235.0], 705.0)})
+    BIRTH_PLACE = FormField(key='birth_place', label='Nơi sinh', 
+                            pdf_coords={FormUseCaseType.PRIVATE_SECTOR: (410.0, 705.0)})
+    ID_PASSPORT_NUM = FormField(key='id_passport_num', label='Số CMND/CCCD',
+                                pdf_coords={FormUseCaseType.PRIVATE_SECTOR: (150.0, 605.0)})
+    ID_PASSPORT_ISSUE_DATE = FormField(key='id_passport_issue_date', label='Ngày cấp', ui_type='date', default_value=None,
+                                       pdf_coords={FormUseCaseType.PRIVATE_SECTOR: ([325.0, 355.0, 390.0], 605.0)})
+    ID_PASSPORT_ISSUE_PLACE = FormField(key='id_passport_issue_place', label='Nơi cấp',
+                                        pdf_coords={FormUseCaseType.PRIVATE_SECTOR: (480.0, 605.0)})
+    REGISTERED_ADDRESS = FormField(key='registered_address', label='Địa chỉ hộ khẩu', default_value='',
+                                   pdf_coords={FormUseCaseType.PRIVATE_SECTOR: (230.0, 665.0)})
+    PHONE = FormField(key='phone', label='Số điện thoại', default_value='',
+                      pdf_coords={FormUseCaseType.PRIVATE_SECTOR: (160.0, 645.0)})
+    ETHNICITY = FormField(key='ethnicity', label='Dân tộc', ui_type='select', options=getattr(para, 'ethnic_groups_vietnam', ['Kinh']), default_value='Kinh',
+                          pdf_coords={FormUseCaseType.PRIVATE_SECTOR: (130.0, 625.0)})
+    RELIGION = FormField(key='religion', label='Tôn giáo', ui_type='select', options=getattr(para, 'religion', ['Không']), default_value='Không',
+                         pdf_coords={FormUseCaseType.PRIVATE_SECTOR: (380.0, 625.0)})
+    PLACE_OF_ORIGIN = FormField(key='place_of_origin', label='Nguyên quán (quê của bố)', default_value='',
+                                pdf_coords={FormUseCaseType.PRIVATE_SECTOR: (160.0, 685.0)})
+    EDUCATION_HIGH_SCHOOL = FormField(key='education_high_school', label='Lộ trình hoàn thành cấp ba', ui_type='select', options=getattr(para, 'education_high_school', ['12/12']), default_value='12/12',
+                                      pdf_coords={FormUseCaseType.PRIVATE_SECTOR: (180.0, 585.0)})
+    YOUTH_DATE = FormField(key='youth_date', label='Ngày kết nạp Đoàn', ui_type='date', default_value=None,
+                           pdf_coords={FormUseCaseType.PRIVATE_SECTOR: ([225.0, 255.0, 285.0], 565.0)})
+    PARTY_DATE = FormField(key='party_date', label='Ngày kết nạp Đảng', ui_type='date', default_value=None,
+                           pdf_coords={FormUseCaseType.PRIVATE_SECTOR: ([225.0, 255.0, 285.0], 545.0)})
+    AWARD = FormField(key='award', label='Khen thưởng', ui_type='select', options=getattr(para, 'awards_titles', ['Chưa có']), default_value='Chưa có',
+                      pdf_coords={FormUseCaseType.PRIVATE_SECTOR: (180.0, 525.0)})
+    DISCIPLINE = FormField(key='discipline', label='Kỷ luật', default_value='Không có',
+                           # This field shares a line with Award, so it would be drawn over it.
+                           # The logic should be to combine these into one string before drawing.
+                           # For now, we map it to the same spot.
+                           pdf_coords={FormUseCaseType.PRIVATE_SECTOR: (350.0, 525.0)})
+    DAD_NAME = FormField(key='dad_name', label='Họ tên Bố', default_value='',
+                         pdf_coords={FormUseCaseType.PRIVATE_SECTOR: (160.0, 460.0)})
+    DAD_AGE = FormField(key='dad_dob_year', label='Năm sinh Bố', default_value='',
+                        pdf_coords={FormUseCaseType.PRIVATE_SECTOR: (490.0, 460.0)})
+    DAD_JOB = FormField(key='dad_job', label='Nghề nghiệp Bố', default_value='',
+                        # Note: This PDF has separate lines for job, company, address.
+                        # Your schema combines them. This coordinate is for the "Nghề nghiệp" line.
+                        pdf_coords={FormUseCaseType.PRIVATE_SECTOR: (200.0, 440.0)})
+    MOM_NAME = FormField(key='mom_name', label='Họ tên Mẹ', default_value='',
+                         pdf_coords={FormUseCaseType.PRIVATE_SECTOR: (160.0, 380.0)})
+    MOM_AGE = FormField(key='mom_dob_year', label='Năm sinh Mẹ', default_value='',
+                        pdf_coords={FormUseCaseType.PRIVATE_SECTOR: (490.0, 380.0)})
+    MOM_JOB = FormField(key='mom_job', label='Nghề nghiệp Mẹ', default_value='',
+                        pdf_coords={FormUseCaseType.PRIVATE_SECTOR: (200.0, 360.0)})
+
+    # Page 2 Fields (Dataframes)
+    # The coordinate is for the STARTING position of the first row.
+    # The rendering function will calculate the position of subsequent rows.
+    TRAINING_DATAFRAME = FormField(
+        key='training_dataframe', label='Quá trình đào tạo',
+        pdf_coords={FormUseCaseType.PRIVATE_SECTOR: (60.0, 680.0)} # Starting coordinate on Page 2
     )
-
-    # Step 2 (Personal Info)
-    FULL_NAME = FormField(key='full_name', label='HỌ VÀ TÊN (viết hoa)', pdf_map=['full_name_p1', 'full_name_p2'])
-    GENDER = FormField(key='gender', label='Giới tính', ui_type='radio', options=['Nam', 'Nữ'], pdf_map='gender', default_value='Nam')
-    DOB = FormField(key='dob', label='Ngày sinh', ui_type='date', pdf_map=['dob_day_p1', 'dob_month_p1', 'dob_year_p1'], 
-                    default_value=None, date_min_max=(date(1900, 1, 1), date.today()))
-    BIRTH_PLACE = FormField(key='birth_place', label='Nơi sinh', pdf_map='birth_place')
-
-    # Step 3 (Official id)
-    ID_PASSPORT_NUM = FormField(key='id_passport_num', label='Số CMND/CCCD', pdf_map='id_number')
-    ID_PASSPORT_ISSUE_DATE = FormField(key='id_passport_issue_date', label='Ngày cấp', ui_type='date', pdf_map=['id_issue_day', 'id_issue_month', 'id_issue_year'], 
-                                       default_value=None, date_min_max=(date(1900, 1, 1), date.today()))
-    ID_PASSPORT_ISSUE_PLACE = FormField(key='id_passport_issue_place', label='Nơi cấp', pdf_map='id_issue_place')
-
-    # Step 4 (contact)
-    REGISTERED_ADDRESS = FormField(key='registered_address', label='Địa chỉ hộ khẩu', pdf_map=['registered_address_p1', 'registered_address_p2'], default_value='')
-    PHONE = FormField(key='phone', label='Số điện thoại', pdf_map='phone', default_value='')
-
-    # Step 5 (origin_info)
-    ETHNICITY = FormField(
-        key='ethnicity', label='Dân tộc', ui_type='select',
-        options=getattr(para, 'ethnic_groups_vietnam', ['Kinh']),
-        pdf_map='ethnicity',
-        default_value=getattr(para, 'ethnic_groups_vietnam', ['Không'])[0]
-        )
-    RELIGION = FormField(
-        key='religion', label='Tôn giáo', ui_type='select',
-        options=getattr(para, 'religion', ['Không']),
-        pdf_map='religion',
-        default_value=getattr(para, 'religion', ['Không'])[0]
-        ) 
-    PLACE_OF_ORIGIN = FormField(key='place_of_origin', label='Nguyên quán (quê của bố)', pdf_map='place_of_origin', default_value='')
-
-    # Step 6 (education)
-    FOREIGN_LANGUAGE = FormField(key='foreign_language', label='Ngoại ngữ', pdf_map='foreign_language', default_value='')
-    EDUCATION_HIGH_SCHOOL = FormField(key='education_high_school', label='Lộ trình hoàn thành cấp ba', ui_type='select',
-                                      options=getattr(para, 'education_high_school', ['12/12']),
-                                      pdf_map='education_high_school', 
-                                      default_value=getattr(para, 'education_high_school', ['12/12'])[0]
-                                      )
-    EDUCATION_HIGHEST = FormField(key='education_highest', label='Bằng cấp cao nhất', ui_type='select',
-                                  options=getattr(para, 'degrees', ["Không có"]),
-                                  pdf_map='education_highest', 
-                                  default_value=getattr(para, 'degrees', ["Không có"])[0]
-                                  )
-    EDUCATION_MAJOR = FormField(key='education_major', label='Chuyên ngành đào tạo', pdf_map='education_major', default_value='')
-    EDUCATION_FORMAT = FormField(key='education_format', label='Loại hình đào tạo', ui_type='select',
-                                 options=getattr(para, 'education_format', ['Chính quy']),
-                                 pdf_map='education_format', 
-                                 default_value=getattr(para, 'education_format', ['Chính quy'])[0]
-                                 )
-
-    # Step 8 (award)
-    AWARD = FormField(key='award', label='Khen thưởng', ui_type='select',
-                      options=getattr(para, 'awards_titles', ['Chưa có']),
-                      pdf_map='award', 
-                      default_value=getattr(para, 'awards_titles', ['Chưa có'])[0]
-                      )
-    DISCIPLINE = FormField(key='discipline', label='Kỷ luật', pdf_map='discipline', default_value='Không có')
-
-    # Step 9 (basic parents info)
-    DAD_NAME = FormField(key='dad_name', label='Họ tên Bố', pdf_map='dad_name', default_value='')
-    DAD_AGE = FormField(key='dad_dob_year', label='Năm sinh Bố', pdf_map='dad_dob_year', default_value='')
-    DAD_JOB = FormField(key='dad_job', label='Nghề nghiệp Bố', pdf_map='dad_job', default_value='')
-
-    MOM_NAME = FormField(key='mom_name', label='Họ tên Mẹ', pdf_map='mom_name', default_value='')
-    MOM_AGE = FormField(key='mom_dob_year', label='Năm sinh Mẹ', pdf_map='mom_dob_year', default_value='')
-    MOM_JOB = FormField(key='mom_job', label='Nghề nghiệp Mẹ', pdf_map='mom_job', default_value='')
-
-
-    # Step 11 (spouse and kids)
-    SPOUSE_NAME = FormField(key='spouse_name', label='Họ tên Vợ/Chồng', pdf_map='spouse_name', default_value='')
-    SPOUSE_AGE = FormField(key='spouse_age', label='Tuổi Vợ/Chồng', pdf_map='spouse_age', default_value='')
-    SPOUSE_JOB = FormField(key='spouse_job', label='Nghề nghiệp Vợ/Chồng', pdf_map='spouse_job', default_value='')
-
-    CHILD_NAME = FormField(key='child_name', label='Họ tên con', pdf_map='child_name', default_value='')
-    CHILD_AGE = FormField(key='child_age', label='Tuổi con', pdf_map='child_age', default_value='')
-    CHILD_JOB = FormField(key='child_job', label='Nghề nghiệp con', pdf_map='child_job', default_value='')
-
-    # Step 12 conditional (social standing)
-    SOCIAL_STANDING = FormField(key='social_standing', label='Thành phần bản thân hiện nay', ui_type='select',
-                                options=getattr(para, 'social_standing', ['Không rõ']),
-                                pdf_map='social_standing',
-                                default_value=getattr(para, 'social_standing', ['Không rõ'])[0]                
-                                )
-    FAMILY_STANDING = FormField(key='family_standing', label='Thành phần gia đình sau cải cách ruộng đất', ui_type='select',
-                                options=getattr(para, 'family_standing', ['Không rõ']),
-                                pdf_map='family_standing',
-                                default_value=getattr(para, 'family_standing', ['Không rõ'])[0]
-                                )
+    WORK_DATAFRAME = FormField(
+        key='work_dataframe', label='Lịch sử làm việc',
+        pdf_coords={FormUseCaseType.PRIVATE_SECTOR: (60.0, 500.0)} # Starting coordinate on Page 2
+    )
     
-    # --- Step 13: Government Affiliation ---
-    YOUTH_DATE = FormField(key='youth_date', label='Ngày kết nạp Đoàn', ui_type='date', 
-                           pdf_map=['youth_adm_day', 'youth_adm_month', 'youth_adm_year'], 
-                           default_value=None, date_min_max=(date(1900, 1, 1), date.today()),
-                            )
-    PARTY_DATE = FormField(key='party_date', label='Ngày kết nạp Đảng', ui_type='date', 
-                           pdf_map=['party_adm_day', 'party_adm_month', 'party_adm_year'], 
-                           default_value=None, date_min_max=(date(1900, 1, 1), date.today()),
-                           )
-    CURRENT_SALARY = FormField(key='current_salary', label='Mức lương hiện tại', 
-                               pdf_map='current_salary', default_value='')
-
-    # --- Step 14: Parent History ---
-    DAD_PRE_AUGUST_REVOLUTION = FormField(key='dad_pre_august_revolution', label='Trước CM tháng 8 làm gì? Ở đâu?', default_value='Không rõ')
-    DAD_DURING_FRENCH_WAR = FormField(key='dad_during_french_war', label='Trong kháng chiến chống Pháp làm gì? \
-                                      Ở đâu?', default_value='Không rõ')
-    DAD_FROM_1955_PRESENT = FormField(key='dad_from_1955_present', label='Từ 1955 đến nay làm gì? Ở đâu? \
-                                    (Ghi rõ tên cơ quan, xí nghiệp hiện nay đang làm)', ui_type='textarea') # Use textarea
-
-    MOM_PRE_AUGUST_REVOLUTION = FormField(key='mom_pre_august_revolution', label='Trước CM tháng 8 làm gì? Ở đâu?', default_value='Không rõ')
-    MOM_DURING_FRENCH_WAR = FormField(key='mom_during_french_war', label='Trong kháng chiến chống Pháp làm gì? \
-                                    Ở đâu?', default_value='Không rõ')
-    MOM_FROM_1955_PRESENT = FormField(key='mom_from_1955_present', label='Từ 1955 đến nay làm gì? Ở đâu? \
-                                    (Ghi rõ tên cơ quan, xí nghiệp hiện nay đang làm)', ui_type='textarea') # Use textarea
-
-    # --- Step 15: Health/Military ---
-    HEALTH = FormField(key='health', label='Tình trạng sức khỏe', pdf_map='health')
-    HEIGHT = FormField(key='height', label='Chiều cao (cm)', pdf_map='height')
-    WEIGHT = FormField(key='weight', label='Cân nặng (kg)', pdf_map='weight')
-    JOIN_ARMY_DATE = FormField(key='join_army_date', label='Ngày nhập ngũ', ui_type='date',
-                               pdf_map='join_army_date', default_value=None,
-                               date_min_max=(date(1900, 1, 1), date.today()), split_date=False)
-    LEAVE_ARMY_DATE = FormField(key='leave_army_date', label='Ngày xuất ngũ', ui_type='date',
-                                pdf_map='leave_army_date', default_value=None,
-                                date_min_max=(date(1900, 1, 1), date.today()), split_date=False)
-
-    # --- Step 16: Emergency Contact ---
-    EMERGENCY_CONTACT_DETAILS = FormField(key='emergency_contact', label='Khi cần báo tin cho', 
-                                          pdf_map='emergency_contact_details', default_value='')
-    
-    EMERGENCY_CONTACT_PLACE = FormField(key='emergency_place', label='Địa chỉ báo tin', 
-                                        pdf_map='emergency_contact_address')
-    SAME_ADDRESS_AS_REGISTERED = FormField(key='same_address_as_registered', label='Nơi báo tin giống địa chỉ hộ khẩu',\
-                                           ui_type='checkbox', default_value=False)
-    
-    # --- DATAFRAME KEYS (for AgGrid-like structures) ---
-    # These keys hold list[dict] data
-    WORK_DATAFRAME = FormField(key='work_dataframe', label='Lịch sử làm việc')
-    SIBLING_DATAFRAME = FormField(key='sibling_dataframe', label='Thông tin anh chị em')
-    CHILD_DATAFRAME = FormField(key='child_dataframe', label='Thông tin con cái')
-
-
-    # --- DATAFRAME-TO-PDF BLUEPRINTS ---
-    # This is the new source of truth for mapping the work history dataframe
-    WORK_DATAFRAME_PDF_MAPPING: list[DataframePDFColumn] = [
-        {
-            'key': 'work_from',
-            'pdf_field_prefix': 'work_from_to_',
-            'transformer': lambda row: f"{row.get('work_from', '')}-{row.get('work_to', '')}"
-        },
-        {'key': 'work_task', 'pdf_field_prefix': 'work_task_'},
-        {'key': 'work_unit', 'pdf_field_prefix': 'work_unit_'},
-        {'key': 'work_role', 'pdf_field_prefix': 'work_role_'},
-    ]
-    SIBLING_DATAFRAME_PDF_MAPPING: list[DataframePDFColumn] = [
-        {'key': 'sibling_name',
-         'pdf_field_prefix': 'sibling_name_age_job_',
-         'transformer': lambda row: (
-                f"{row.get('sibling_name', '')} - "
-                f"Tuổi: {row.get('sibling_age', '')} - "
-                f"Nghề nghiệp: {row.get('sibling_job', '')}"
-            )
-         },
-         {'key': 'sibling_address', 'pdf_field_prefix': 'sibling_address_'},
-        #  {'key': 'sibling_political_level', 'pdf_field_prefix': 'sibling_political_level_'},
-    ]
-    CHILD_DATAFRAME_PDF_MAPPING: list[DataframePDFColumn] = [
-        {'key': 'child_name', 'pdf_field_prefix': 'child_name_'},
-        {'key': 'child_age', 'pdf_field_prefix': 'child_age_'},
-        {'key': 'child_job', 'pdf_field_prefix': 'child_job_'},
-    ]
+    # --- Fields NOT MAPPED on this PDF template ---
+    # These fields from your schema do not have a clear, corresponding place
+    # on the provided TEMPLATE-PRIVATE.pdf and are left without coordinates.
+    FORM_TEMPLATE_SELECTOR = FormField(key='form_template_selector', label='Tổ chức bạn đang nộp hồ sơ cho:', ui_type='radio')
+    FOREIGN_LANGUAGE = FormField(key='foreign_language', label='Ngoại ngữ', default_value='')
+    EDUCATION_HIGHEST = FormField(key='education_highest', label='Bằng cấp cao nhất', ui_type='select')
+    EDUCATION_MAJOR = FormField(key='education_major', label='Chuyên ngành đào tạo', default_value='')
+    EDUCATION_FORMAT = FormField(key='education_format', label='Loại hình đào tạo', ui_type='select')
+    SPOUSE_NAME = FormField(key='spouse_name', label='Họ tên Vợ/Chồng', default_value='')
+    SPOUSE_AGE = FormField(key='spouse_age', label='Tuổi Vợ/Chồng', default_value='')
+    SPOUSE_JOB = FormField(key='spouse_job', label='Nghề nghiệp Vợ/Chồng', default_value='')
+    SOCIAL_STANDING = FormField(key='social_standing', label='Thành phần bản thân hiện nay', ui_type='select')
+    FAMILY_STANDING = FormField(key='family_standing', label='Thành phần gia đình sau cải cách ruộng đất', ui_type='select')
+    CURRENT_SALARY = FormField(key='current_salary', label='Mức lương hiện tại', default_value='')
+    DAD_PRE_AUGUST_REVOLUTION = FormField(key='dad_pre_august_revolution', label='Trước CM tháng 8 làm gì? Ở đâu?')
+    DAD_DURING_FRENCH_WAR = FormField(key='dad_during_french_war', label='Trong kháng chiến chống Pháp làm gì? Ở đâu?')
+    DAD_FROM_1955_PRESENT = FormField(key='dad_from_1955_present', label='Từ 1955 đến nay làm gì? Ở đâu?', ui_type='textarea')
+    MOM_PRE_AUGUST_REVOLUTION = FormField(key='mom_pre_august_revolution', label='Trước CM tháng 8 làm gì? Ở đâu?')
+    MOM_DURING_FRENCH_WAR = FormField(key='mom_during_french_war', label='Trong kháng chiến chống Pháp làm gì? Ở đâu?')
+    MOM_FROM_1955_PRESENT = FormField(key='mom_from_1955_present', label='Từ 1955 đến nay làm gì? Ở đâu?', ui_type='textarea')
+    HEALTH = FormField(key='health', label='Tình trạng sức khỏe')
+    HEIGHT = FormField(key='height', label='Chiều cao (cm)')
+    WEIGHT = FormField(key='weight', label='Cân nặng (kg)')
+    JOIN_ARMY_DATE = FormField(key='join_army_date', label='Ngày nhập ngũ', ui_type='date', default_value=None)
+    LEAVE_ARMY_DATE = FormField(key='leave_army_date', label='Ngày xuất ngũ', ui_type='date', default_value=None)
+    EMERGENCY_CONTACT_DETAILS = FormField(key='emergency_contact', label='Khi cần báo tin cho', default_value='')
+    EMERGENCY_CONTACT_PLACE = FormField(key='emergency_place', label='Địa chỉ báo tin')
+    SAME_ADDRESS_AS_REGISTERED = FormField(key='same_address_as_registered', label='Nơi báo tin giống địa chỉ hộ khẩu', ui_type='checkbox')
+    SIBLING_DATAFRAME = FormField(key='sibling_dataframe', label='Thông tin anh chị em') # Layout is too complex for simple row rendering
+    CHILD_DATAFRAME = FormField(key='child_dataframe', label='Thông tin con cái') # No section for this on the PDF
 
     @classmethod
     def get_all_fields(cls) -> list[FormField]:
@@ -242,12 +166,13 @@ FORM_ATTEMPTED_SUBMISSION_KEY: str = 'form_attempted_submission'
 CURRENT_STEP_ERRORS_KEY: str = 'current_step_errors'
 
 # Max rows
+TRAINING_HISTORY_MAX_ROWS: int = 5
 WORK_HISTORY_MAX_ROWS: int = 4
 SIBLING_MAX_ROWS: int = 3
 CHILD_MAX_ROWS: int = 5
 
-PDF_TEMPLATE_PATH: str = "assets/TEMPLATE-Arial.pdf" # Ensure this path is correct
-PDF_FILENAME: str = "SoYeuLyLich_DaDien.pdf"
+PDF_TEMPLATE_PATH: str | Path = "assets/TEMPLATE-PRIVATE.pdf" # Ensure this path is correct
+PDF_FILENAME: str | Path = "SoYeuLyLich_DaDien.pdf"
 
 # --- DECOMPOSED UI CREATION HELPERS ---
 def get_form_data() -> dict[str, Any]:
@@ -423,6 +348,7 @@ def initialize_form_data() -> None:
         form_data[field.key] = field.default_value
     
     # Initialize dataframe keys to empty lists
+    form_data[AppSchema.TRAINING_DATAFRAME.key] = []
     form_data[AppSchema.WORK_DATAFRAME.key] = []
     form_data[AppSchema.SIBLING_DATAFRAME.key] = []
     form_data[AppSchema.CHILD_DATAFRAME.key] = []
@@ -463,20 +389,20 @@ def _map_dataframe_to_pdf(
                 pdf_field_name = f"{column_rule['pdf_field_prefix']}{pdf_index}"
                 pdf_data[pdf_field_name] = ''
 
-def generate_pdf_data_mapping() -> dict[str, Any]:
+def generate_pdf_data_mapping() -> dict[str, str]:
     """
     Transforms app data into a PDF-ready dictionary by dynamically
     iterating through the AppSchema. No more hardcoding.
     """
     form_data = get_form_data()
-    pdf_data: dict[str, Any] = {}
+    pdf_data: dict[str, str] = {}
 
     # 1. Map all simple fields defined in AppSchema
     for field in AppSchema.get_all_fields():
         if not field.pdf_map or field.key not in form_data:
             continue
         
-        value = form_data.get(field.key)
+        value = form_data.get(field.key, '')
 
         if field.ui_type == 'date' and isinstance(field.pdf_map, list) and field.split_date==True:
             day, month, year = _split_date_for_pdf(cast(str | None, value))
@@ -490,7 +416,14 @@ def generate_pdf_data_mapping() -> dict[str, Any]:
         else: # pdf_map is a string
             pdf_data[field.pdf_map] = value
 
-    # 2. Map the dataframes (work, siblings, children)
+    # 2. Map the dataframes (training, work, siblings, children)
+    _map_dataframe_to_pdf(
+        pdf_data=pdf_data,
+        dataframe=cast(list[dict[str, str]], form_data.get(AppSchema.TRAINING_DATAFRAME.key, [])),
+        column_map=AppSchema.TRAINING_DATAFRAME_PDF_MAPPING,
+        max_entries=TRAINING_HISTORY_MAX_ROWS
+    )
+
     _map_dataframe_to_pdf(
         pdf_data=pdf_data,
         dataframe=cast(list[dict[str, str]], form_data.get(AppSchema.WORK_DATAFRAME.key, [])),

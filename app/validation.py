@@ -1,13 +1,15 @@
 # validators.py
 from __future__ import annotations
 import re
-from typing import Any, Callable, Dict, Optional, Pattern, Tuple
+from re import Pattern
+from typing import Any
+from collections.abc import Callable
 from datetime import date, datetime
 
 # --- Type Aliases ---
-ValidationResult = Tuple[bool, str]
+ValidationResult = tuple[bool, str]
 # The validator now gets the value and the entire form_data dict for context
-ValidatorFunc = Callable[[Optional[Any], Dict[str, Any]], ValidationResult]
+ValidatorFunc = Callable[[Any | None, dict[str, Any]], ValidationResult]
 
 # --- Regex Patterns (centralized) ---
 FULL_NAME_PATTERN: Pattern[str] = re.compile(r'^[A-ZÀÁẠẢÃÂẦẤẬẨẪĂẰẮẶẲẴĐÈÉẸẺẼÊỀẾỆỂỄÌÍỊỈĨÒÓỌỎÕÔỒỐỘỔỖƠỜỚỢỞỠÙÚỤỦŨƯỪỨỰỬỮỲÝỴỶỸ ]+$')
@@ -24,7 +26,7 @@ DATE_FORMAT_STORAGE: str = '%Y-%m-%d'
 
 def required(message: str = "Vui lòng không để trống trường này.") -> ValidatorFunc:
     """Ensures a value is not None, not an empty string, and not just whitespace."""
-    def validator(value: Optional[Any], form_data: Dict[str, Any]) -> ValidationResult:
+    def validator(value: Any | None, form_data: dict[str, Any]) -> ValidationResult:
         if value is None:
             return False, message
         if isinstance(value, str) and not value.strip():
@@ -36,7 +38,7 @@ def required(message: str = "Vui lòng không để trống trường này.") ->
 
 def required_choice(message: str = "Vui lòng thực hiện lựa chọn.") -> ValidatorFunc:
     """Ensures a value from a select/radio is not None or empty/whitespace."""
-    def validator(value: Optional[Any], form_data: Dict[str, Any]) -> ValidationResult:
+    def validator(value: Any | None, form_data: dict[str, Any]) -> ValidationResult:
         if value is None or (isinstance(value, str) and not value.strip()):
             return False, message
         return True, ""
@@ -44,7 +46,7 @@ def required_choice(message: str = "Vui lòng thực hiện lựa chọn.") -> V
 
 def match_pattern(pattern: Pattern[str], message: str) -> ValidatorFunc:
     """Ensures a string value matches a regex pattern."""
-    def validator(value: Optional[Any], form_data: Dict[str, Any]) -> ValidationResult:
+    def validator(value: Any | None, form_data: dict[str, Any]) -> ValidationResult:
         # This validator should only run if the field is not empty.
         # Chain it with required() to validate non-empty fields.
         if not value or not isinstance(value, str):
@@ -55,11 +57,11 @@ def match_pattern(pattern: Pattern[str], message: str) -> ValidatorFunc:
     return validator
 
 def is_within_date_range(
-    min_date: Optional[date] = date(1900, 1, 1), max_date: Optional[date] = date.today(),
+    min_date: date | None = date(1900, 1, 1), max_date: date | None = date.today(),
     message: str = "Ngày chọn nằm ngoài khoảng cho phép."
 ) -> ValidatorFunc:
     """Ensures a date string is within the specified min/max range."""
-    def validator(value: Optional[str], form_data: Dict[str, Any]) -> ValidationResult:
+    def validator(value: str | None, form_data: dict[str, Any]) -> ValidationResult:
         if not value:
             return True, ''
         try:
@@ -78,7 +80,7 @@ def is_date_after(other_field_key: str, message: str) -> ValidatorFunc:
     Validates that a MM/YYYY date in one field comes after a MM/YYYY date
     in another field within the same row of data.
     """
-    def validator(value: Optional[str], row_data: Dict[str, Any]) -> ValidationResult:
+    def validator(value: str | None, row_data: dict[str, Any]) -> ValidationResult:
         # `value` is the 'work_to' date
         other_value = row_data.get(other_field_key)
 
