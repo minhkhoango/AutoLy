@@ -876,8 +876,6 @@ def main_page() -> None:
             update_step_content()
 
 if __name__ in {"__main__", "__mp_main__"}:
-    if not os.path.exists(PDF_TEMPLATE_PATH):
-        print(f"WARNING: PDF template not found at '{PDF_TEMPLATE_PATH}'. PDF generation will fail.")
     ui.run(storage_secret='a_secure_and_unique_secret_string_for_this_app!',
            uvicorn_reload_dirs='.', uvicorn_reload_includes='*.py')
 
