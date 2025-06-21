@@ -48,7 +48,7 @@ FORM_TEMPLATE_REGISTRY: dict[FormUseCaseType, FormTemplate] = {
         'gov_form_code': None,
         'step_sequence': [
             # Core Info
-            1, 3, 5, 6, 7, 
+            1, 3, 5, 6, 7,
             # Review
             16,
         ],

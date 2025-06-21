@@ -1,9 +1,9 @@
 # validators.py
 from __future__ import annotations
 import re
-from re import Pattern
-from typing import Any
+from typing import Any, cast
 from collections.abc import Callable
+from re import Pattern
 from datetime import date, datetime
 
 # --- Type Aliases ---
@@ -82,9 +82,9 @@ def is_date_after(other_field_key: str, message: str) -> ValidatorFunc:
     Validates that a MM/YYYY date in one field comes after a MM/YYYY date
     in another field within the same row of data.
     """
-    def validator(value: str | None, row_data: dict[str, Any]) -> ValidationResult:
+    def validator(value: Optional[str], row_data: Dict[str, Any]) -> ValidationResult:
         # `value` is the 'work_to' date
-        other_value = row_data.get(other_field_key)
+        other_value: str = cast(str, row_data.get(other_field_key))
 
         # If either value is missing or not in the right format, another validator will catch it.
         if not value or not other_value or '/' not in value or '/' not in other_value:
