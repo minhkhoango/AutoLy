@@ -56,10 +56,10 @@ class AppSchema:
                        pdf_coords={FormUseCaseType.PRIVATE_SECTOR: (436.02, 179.88)})
     DOB = FormField(key='dob', label='Ngày sinh', ui_type='date', default_value=None,
                     pdf_coords={FormUseCaseType.PRIVATE_SECTOR: ([152.52, 202.02, 242.02], 201.5)})
-    BIRTH_PLACE = FormField(key='birth_place', label='Nơi sinh', ui_type='select', options=getattr(para, 'vn_province', ['Hà Nội', 'TP. Hồ Chí Minh', 'Thanh Hóa']), 
+    BIRTH_PLACE = FormField(key='birth_place', label='Nơi sinh', ui_type='select', options=getattr(para, 'vn_province', ['Hà Nội', 'TP. Hồ Chí Minh', 'Thanh Hóa']), default_value='Hà Nội',
                             pdf_coords={FormUseCaseType.PRIVATE_SECTOR: (332.06, 201.5)})
-    REGISTERED_ADDRESS = FormField(key='registered_address', label='Địa chỉ hộ khẩu',
-                                   default_value='Hà Nội', pdf_coords={FormUseCaseType.PRIVATE_SECTOR: (259.06, 244.83)})
+    REGISTERED_ADDRESS = FormField(key='registered_address', label='Địa chỉ hộ khẩu', default_value='', 
+                                   pdf_coords={FormUseCaseType.PRIVATE_SECTOR: (259.06, 244.83)})
     PHONE = FormField(key='phone', label='Số điện thoại',
                       pdf_coords={FormUseCaseType.PRIVATE_SECTOR: (209.06, 287.46)})
     ETHNICITY = FormField(key='ethnicity', label='Dân tộc', ui_type='select', options=getattr(para, 'ethnic_groups_vietnam', ['Kinh']), default_value='Kinh',
