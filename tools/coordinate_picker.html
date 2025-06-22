@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDF Coordinate Finder</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://mozilla.github.io/pdf.js/build/pdf.mjs" type="module"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        #the-canvas { cursor: crosshair; }
+        .toast {
+            visibility: hidden;
+            min-width: 250px;
+            background-color: #333;
+            color: #fff;
+            text-align: center;
+            border-radius: 8px;
+            padding: 16px;
+            position: fixed;
+            z-index: 1;
+            left: 50%;
+            bottom: 30px;
+            transform: translateX(-50%);
+            opacity: 0;
+            transition: opacity 0.5s, visibility 0.5s;
+        }
+        .toast.show {
+            visibility: visible;
+            opacity: 1;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-800 flex flex-col items-center p-4 md:p-8">
+
+    <div class="w-full max-w-5xl bg-white rounded-xl shadow-lg p-6 md:p-8">
+        <h1 class="text-2xl md:text-3xl font-bold text-center mb-4">PDF Coordinate Finder</h1>
+        <p class="text-center text-gray-600 mb-6">Upload your PDF template, then click anywhere on the page to get the precise (x, y) coordinates for your schema.</p>
+
+        <div class="flex justify-center mb-6">
+            <input type="file" id="pdf-upload" class="block w-full max-w-xs text-sm text-gray-500
+              file:mr-4 file:py-2 file:px-4
+              file:rounded-full file:border-0
+              file:text-sm file:font-semibold
+              file:bg-violet-50 file:text-violet-700
+              hover:file:bg-violet-100
+            "/>
+        </div>
+
+        <div id="pdf-controls" class="flex items-center justify-center space-x-4 my-4 hidden">
+            <button id="prev-page" class="bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-2 px-4 rounded-lg transition-colors">Previous</button>
+            <span class="text-lg font-medium">Page: <span id="page-num"></span> / <span id="page-count"></span></span>
+            <button id="next-page" class="bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-2 px-4 rounded-lg transition-colors">Next</button>
+        </div>
+
+        <div class="bg-gray-50 p-4 rounded-lg text-center mb-6 h-20 flex items-center justify-center">
+             <p id="coords-display" class="text-lg md:text-xl font-mono text-gray-700">Click on the PDF to see coordinates here</p>
+        </div>
+       
+        <div id="canvas-container" class="w-full border-2 border-dashed border-gray-300 rounded-lg bg-gray-100 flex items-center justify-center" style="min-height: 500px;">
+            <canvas id="the-canvas" class="rounded-lg shadow-md"></canvas>
+        </div>
+    </div>
+    
+    <div id="toast" class="toast">Coordinates copied to clipboard!</div>
+
+    <script type="module">
+        const { pdfjsLib } = globalThis;
+        pdfjsLib.GlobalWorkerOptions.workerSrc = `https://mozilla.github.io/pdf.js/build/pdf.worker.mjs`;
+
+        let pdfDoc = null,
+            pageNum = 1,
+            pageRendering = false,
+            pageNumPending = null,
+            scale = 2; // Render at a higher resolution for clarity
+
+        const canvas = document.getElementById('the-canvas');
+        const ctx = canvas.getContext('2d');
+        const coordsDisplay = document.getElementById('coords-display');
+        const fileInput = document.getElementById('pdf-upload');
+
+        function renderPage(num) {
+            pageRendering = true;
+            pdfDoc.getPage(num).then(page => {
+                const viewport = page.getViewport({ scale: scale });
+                canvas.height = viewport.height;
+                canvas.width = viewport.width;
+
+                const renderContext = {
+                    canvasContext: ctx,
+                    viewport: viewport
+                };
+                const renderTask = page.render(renderContext);
+                renderTask.promise.then(() => {
+                    pageRendering = false;
+                    if (pageNumPending !== null) {
+                        renderPage(pageNumPending);
+                        pageNumPending = null;
+                    }
+                });
+            });
+
+            document.getElementById('page-num').textContent = num;
+        }
+
+        function queueRenderPage(num) {
+            if (pageRendering) {
+                pageNumPending = num;
+            } else {
+                renderPage(num);
+            }
+        }
+
+        function onPrevPage() {
+            if (pageNum <= 1) return;
+            pageNum--;
+            queueRenderPage(pageNum);
+        }
+
+        function onNextPage() {
+            if (pageNum >= pdfDoc.numPages) return;
+            pageNum++;
+            queueRenderPage(pageNum);
+        }
+
+        document.getElementById('prev-page').addEventListener('click', onPrevPage);
+        document.getElementById('next-page').addEventListener('click', onNextPage);
+
+        fileInput.addEventListener('change', e => {
+            const file = e.target.files[0];
+            if (file.type !== 'application/pdf') {
+                alert('Please select a PDF file.');
+                return;
+            }
+            const fileReader = new FileReader();
+            fileReader.onload = function() {
+                const typedarray = new Uint8Array(this.result);
+                pdfjsLib.getDocument(typedarray).promise.then(pdfDoc_ => {
+                    pdfDoc = pdfDoc_;
+                    document.getElementById('page-count').textContent = pdfDoc.numPages;
+                    pageNum = 1;
+                    renderPage(pageNum);
+                    document.getElementById('pdf-controls').classList.remove('hidden');
+                });
+            };
+            fileReader.readAsArrayBuffer(file);
+        });
+
+        canvas.addEventListener('click', e => {
+            if (!pdfDoc) return;
+            
+            const rect = canvas.getBoundingClientRect();
+            const canvasX = e.clientX - rect.left;
+            const canvasY = e.clientY - rect.top;
+
+            // Convert canvas pixel coordinates to PDF point coordinates
+            const pdfX = (canvasX / scale).toFixed(2);
+            const pdfY = (canvasY / scale).toFixed(2);
+            
+            const coordString = `(${pdfX}, ${pdfY})`;
+            coordsDisplay.innerHTML = `Coordinates: <span class="font-bold text-violet-700">${coordString}</span>`;
+
+            // Copy to clipboard
+            const tempInput = document.createElement('input');
+            tempInput.value = coordString;
+            document.body.appendChild(tempInput);
+            tempInput.select();
+            document.execCommand('copy');
+            document.body.removeChild(tempInput);
+
+            // Show toast
+            const toast = document.getElementById('toast');
+            toast.classList.add('show');
+            setTimeout(() => { toast.classList.remove('show'); }, 3000);
+        });
+    </script>
+
+</body>
+</html>

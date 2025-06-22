@@ -2,6 +2,9 @@ from __future__ import annotations
 from enum import Enum, auto
 from typing import TypedDict
 from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
 # ===================================================================
 # 1. DEFINE THE "PRODUCTS" - OUR DOSSIER TYPES
 # ===================================================================
@@ -49,7 +52,7 @@ FORM_TEMPLATE_REGISTRY: dict[FormUseCaseType, FormTemplate] = {
             # Review
             16,
         ],
-        'pdf_template_path': 'assets/TEMPLATE-PRIVATE.pdf',
+        'pdf_template_path': PROJECT_ROOT / 'assets' / 'TEMPLATE-V2.pdf',
         'dataframe_page_map': {
             'training_dataframe': 2,
             'work_dataframe': 2, 
