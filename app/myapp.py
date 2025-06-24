@@ -33,6 +33,86 @@ from utils import (
     initialize_form_data, get_form_data
 )
 
+# ===================================================================
+# 2. NEW: AUTH & MULTI-USER DATA STORE (The "Hotel Front Desk")
+# ===================================================================
+
+# This is our temporary user database. In a real app, this would be a database table.
+# Passwords should be hashed, but for the MVP, plaintext is fine to see the mechanism.
+ALLOWED_USERS: dict[str, str] = {
+    'user1': 'pass1',
+    'user2': 'pass2',
+    'autoly_dev': 'autoly_dev_pass'
+}
+
+USER_DATA_STORE: dict[str, dict[str, Any]] = {}
+
+def get_current_user() -> str | None:
+    """Safely retrieves the username from the user's session storage."""
+    user_storage = cast(dict[str, Any], app.storage.user)
+    return cast(str | None, user_storage.get('username'))
+
+# ===================================================================
+# 3. CENTRALIZED DATA HELPERS (Now user-aware)
+# ===================================================================
+
+def get_user_storage() -> dict[str, Any]:
+    """
+    This is the core of our multi-user strategy.
+    It retrieves the data dictionary for the currently logged-in user.
+    If the user has no data yet, it initializes their "slot" in the store.
+    """
+    username = get_current_user()
+    if not username:
+        # This should not happen on a protected page, but as a safeguard:
+        raise PermissionError("Attempted to access user storage without being logged in.")
+    
+    if username not in USER_DATA_STORE:
+        USER_DATA_STORE[username] = {}
+    
+    return USER_DATA_STORE[username]
+
+def get_form_data() -> dict[str, Any]:
+    """
+    MODIFIED: Now fetches form_data from the correct user's slot in the
+    global USER_DATA_STORE.
+    """
+    user_storage = get_user_storage()
+    if not isinstance(user_storage.get(FORM_DATA_KEY), dict):
+        user_storage[FORM_DATA_KEY] = {}
+    return cast(dict[str, Any], user_storage[FORM_DATA_KEY])
+
+def initialize_form_data() -> None:
+    """
+    MODIFIED: Populates form_data with defaults within the specific
+    logged-in user's data store.
+    """
+    user_storage = get_user_storage()
+
+    if user_storage:
+        return
+
+    # Set up the structure for a new user
+    user_storage[STEP_KEY] = 0
+    user_storage[SELECTED_USE_CASE_KEY] = None
+    user_storage[FORM_ATTEMPTED_SUBMISSION_KEY] = False
+    user_storage[CURRENT_STEP_ERRORS_KEY] = {}
+
+
+    form_data = get_form_data()
+    if form_data: # Don't re-initialize if data already exists
+        return
+    
+    for field in AppSchema.get_all_fields():
+        if field.key not in form_data:
+            form_data[field.key] = field.default_value
+    
+    form_data[AppSchema.TRAINING_DATAFRAME.key] = []
+    form_data[AppSchema.WORK_DATAFRAME.key] = []
+    form_data[AppSchema.CHILD_DATAFRAME.key] = []
+    
+    
+
 # --- Modernized Type Aliases ---
 SimpleValidatorEntry: TypeAlias = tuple[str, list[ValidatorFunc]]
 DataframeColumnRules: TypeAlias = dict[str, list[ValidatorFunc]]
@@ -161,7 +241,7 @@ async def _handle_step_confirmation(button: ui.button) -> None:
     """The core logic for validating a step and moving to the next."""
     button.disable()
     try:
-        user_storage = cast(dict[str, Any], app.storage.user)
+        user_storage = get_user_storage()
         current_step_id = user_storage.get(STEP_KEY, 0)
         current_step_def = STEPS_BY_ID.get(current_step_id)
         if not current_step_def: return
@@ -229,7 +309,7 @@ def render_text_on_pdf(
             raise FileNotFoundError(f"CRITICAL: Template not found at {TEMPLATE_FILE}")
 
         doc = fitz.open(TEMPLATE_FILE)
-        user_storage = cast(dict[str, Any], app.storage.user)
+        user_storage = get_user_storage()
         selected_use_case = FormUseCaseType[cast(str, user_storage.get(SELECTED_USE_CASE_KEY))]
 
         # 2. --- DRAW ALL DATA ---
@@ -308,7 +388,7 @@ async def create_and_download_pdf(button: ui.button) -> None:
     button.disable()
     output_pdf_path_obj = None
     try:
-        user_storage = cast(dict[str, Any], app.storage.user)
+        user_storage = get_user_storage()
         form_data = get_form_data()
         selected_use_case_name = user_storage.get(SELECTED_USE_CASE_KEY)
         if not selected_use_case_name:
@@ -360,7 +440,7 @@ async def create_and_download_pdf(button: ui.button) -> None:
 def _render_dataframe_editor(df_conf: DataframeConfig) -> None:
     """Renders a dynamic list editor for things like Work History, Siblings, etc."""
     ui.label(df_conf['field'].label).classes('text-subtitle1 q-mt-md q-mb-sm')
-    user_storage = cast(dict[str, Any], app.storage.user)
+    user_storage = get_user_storage()
     form_data = get_form_data()
     dataframe_key = df_conf['field'].key
     @ui.refreshable
@@ -467,7 +547,7 @@ def create_field(field_definition: FormField) -> None:
     It also handles label creation and error display centrally.
     """
     form_data = get_form_data()
-    user_storage = cast(dict[str, Any], app.storage.user)
+    user_storage = get_user_storage()
     current_value = form_data.get(field_definition.key, field_definition.default_value)
 
     # Get the error state for this specific field
@@ -567,7 +647,7 @@ STEPS_BY_ID: dict[int, StepDefinition] = {
 
 def _get_current_form_template() -> FormTemplate | None:
     """Looks up the blueprint for the user's selected form use case."""
-    user_storage = cast(dict[str, Any], app.storage.user)
+    user_storage = get_user_storage()
     use_case_value_str = user_storage.get(SELECTED_USE_CASE_KEY)
     if not use_case_value_str:
         return None
@@ -580,7 +660,7 @@ def _get_current_form_template() -> FormTemplate | None:
 
 def next_step() -> None:
     """Navigates to the next step based on the selected template's defined sequence."""
-    user_storage = cast(dict[str, Any], app.storage.user)
+    user_storage = get_user_storage()
     current_step_id: int = cast(int, user_storage.get(STEP_KEY, 0))
     form_template = _get_current_form_template()
     if not form_template:
@@ -607,7 +687,7 @@ def next_step() -> None:
 
 def prev_step() -> None:
     """Navigates to the previous step in the sequence or back to the selector."""
-    user_storage = cast(dict[str, Any], app.storage.user)
+    user_storage = get_user_storage()
     current_step_id: int = cast(int, user_storage.get(STEP_KEY, 0))
     form_template = _get_current_form_template()
     if not form_template:
@@ -629,7 +709,7 @@ def prev_step() -> None:
  
 @ui.refreshable
 def update_step_content() -> None:
-    user_storage = cast(dict[str, Any], app.storage.user)
+    user_storage = get_user_storage()
     current_step_id: int = user_storage.get(STEP_KEY, 0)
     step_to_render = STEPS_BY_ID.get(current_step_id)
     if step_to_render:
@@ -641,33 +721,63 @@ def update_step_content() -> None:
 # ===================================================================
 # 6. MAIN PAGE AND APP STARTUP
 # ===================================================================
+
+@ui.page('/login')
+def login_page() -> None:
+    """The page where users enter their credentials."""
+    def attempt_login() -> None:
+        username = username_input.value
+        password = password_input.value
+        if ALLOWED_USERS.get(username) == password:
+            app.storage.user['username'] = username
+            app.storage.user['authenticated'] = True
+            # This is where we set up a new user's environment
+            initialize_form_data()
+            ui.navigate.to('/')
+        else:
+            ui.notify('Sai tên đăng nhập hoặc mật khẩu.', color='negative')
+
+    with ui.card().classes('absolute-center'):
+        ui.label('Đăng nhập vào AutoLý').classes('text-h6 self-center')
+        username_input = ui.input('Tên đăng nhập').on('keydown.enter', attempt_login)
+        password_input = ui.input('Mật khẩu', password=True, password_toggle_button=True).on('keydown.enter', attempt_login)
+        ui.button('Đăng nhập', on_click=attempt_login).classes('self-center')
+
+
 @ui.page('/')
 def main_page() -> None:
-    user_storage = cast(dict[str, Any], app.storage.user)
-    if not user_storage:
-        user_storage[STEP_KEY] = 0
-        user_storage[SELECTED_USE_CASE_KEY] = None
-        user_storage[FORM_ATTEMPTED_SUBMISSION_KEY] = False
-        user_storage[CURRENT_STEP_ERRORS_KEY] = {}
-        initialize_form_data()
+    # This is the gatekeeper for our main application.
+    user_storage = get_user_storage()
+    if not user_storage.get('authenticated'):
+        ui.navigate.to('/login')
+        return
+    
+    def logout() -> None:
+        # Clear the session cookie and redirect to login
+        user_storage.clear()
+        ui.navigate.to('/login')
 
     ui.query('body').style('background-color: #f0f2f5;')
     with ui.header(elevated=True).classes('bg-primary text-white q-pa-sm items-center'):
         ui.label("📝 AutoLý – Kê khai Sơ yếu lý lịch").classes('text-h5')
         ui.space()
+        
+        # User info and logout button
+        with ui.row().classes('items-center'):
+            ui.label(f"Xin chào, {get_current_user()}!").classes('q-mr-md')
+            ui.button('Đăng xuất', on_click=logout, color='white', icon='logout').props('flat dense')
+        
+        # Debug menu remains, but now it shows the *entire* data store
         with ui.button(icon='bug_report', color='white').props('flat round dense'):
             with ui.menu().classes('bg-grey-2 shadow-3'):
-                with ui.card().style("min-width: 350px; max-width: 90vw;"):
-                    ui.label(f"Step: {user_storage.get(STEP_KEY)}")
-                    with ui.expansion("Form Data", icon="description").classes("w-full"):
-                        ui.json_editor({'value': user_storage.get(FORM_DATA_KEY, {})}).props('readonly')
-                    with ui.expansion("Step Errors", icon="error").classes("w-full"):
-                        ui.json_editor({'value': user_storage.get(CURRENT_STEP_ERRORS_KEY, {})}).props('readonly')
+                with ui.card().style("min-width: 450px; max-width: 90vw;"):
+                    with ui.expansion("Toàn bộ dữ liệu người dùng (USER_DATA_STORE)", icon="storage").classes("w-full"):
+                        # This shows the data for ALL users, demonstrating isolation.
+                        ui.json_editor({'value': USER_DATA_STORE}).props('readonly')
 
-    with ui.card().classes('q-mx-auto q-my-md q-pa-md shadow-4 rounded-borders') \
-                  .style('width: 95%; max-width: 900px; min-height: 75vh; \
-                          max-height: calc(100vh - 120px); display: flex; flex-direction: column;'):
-        with ui.column().classes('col w-full q-pa-md scroll'):
+    with ui.card().classes('q-mx-auto q-my-md q-pa-md shadow-4') \
+                  .style('width: 95%; max-width: 900px;'):
+        with ui.column().classes('w-full'):
             update_step_content()
 
 if __name__ in {"__main__", "__mp_main__"}:
