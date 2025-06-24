@@ -1,116 +1,49 @@
-# 📝 AutoLý – Vietnamese Background Form Filler | Trình điền Sơ yếu lý lịch tự động
+# AutoLý
 
-**AutoLý** is a fast, user-friendly app for filling out Vietnam’s official *Sơ yếu lý lịch* (background form). Just enter your information into a web form and download a ready-to-submit PDF, fully formatted and localized.
+AutoLý is a small Python application that generates the Vietnamese **Sơ yếu lý lịch** PDF from a web form.  It uses [NiceGUI](https://github.com/zauberzeug/nicegui) for the interface and PyMuPDF to draw text onto a template PDF.
 
-**AutoLý** là công cụ đơn giản giúp bạn điền *Mẫu Sơ yếu lý lịch* nhanh chóng. Nhập thông tin vào giao diện web, bấm nút, và nhận ngay file PDF hoàn chỉnh – đúng mẫu và dễ in.
+## Features
 
----
+- Step‑based form: personal info, contact details, education history, work history and more.  Steps are defined in `app/myapp.py` and follow the sequence described in `app/form_data_builder.py`.
+- Centralised field definitions in `app/utils.py` (`AppSchema`) including PDF coordinates for each field.
+- Validation helpers in `app/validation.py` ensure the entered data is consistent.
+- PDF generation via `render_text_on_pdf` (see `app/myapp.py` lines 205‑299) writes all data to `assets/TEMPLATE-V2.pdf` using the `NotoSans-Regular.ttf` font.
+- A helper page `tools/coordinate_picker.html` lets you find coordinates on your own template PDF.
 
-## 🚀 Features | Tính năng
+## Requirements
 
-- 🧾 Fill the official Vietnamese government background form | Điền đúng mẫu chuẩn Nhà nước
-- 📋 Input personal, family, academic, and work history | Nhập thông tin cá nhân, quan hệ gia đình, học vấn, công tác
-- 📄 Preview the filled PDF in-browser | Xem trước file PDF trực tiếp trên trang web
-- 📥 Download formatted PDF with one click | Tải file PDF đã điền đầy đủ
-- 🇻🇳 Vietnamese placeholders & UX hints | Hướng dẫn và ví dụ nội dung dễ hiểu
-
----
-
-## 🛠 Tech Stack | Công nghệ sử dụng
-
-| Purpose            | Technology         |
-|--------------------|--------------------|
-| Web UI             | Streamlit          |
-| PDF Processing     | PyMuPDF (fitz)     |
-| Data Handling      | Pandas             |
-| Font Rendering     | Custom TTF font    |
-
----
-
-## 🧰 Installation | Hướng dẫn cài đặt
-
-### 1. Clone the repo | Tải mã nguồn
+Python 3.11 or newer is recommended.  Install dependencies with:
 
 ```bash
-git clone https://github.com/your-username/autoly.git
-cd autoly
-```
-2. Install dependencies | Cài thư viện cần thiết
-bash
-Copy
-Edit
 pip install -r requirements.txt
-Dependencies:
+```
 
-streamlit
+## Running
 
-pymupdf
+Execute the NiceGUI application directly:
 
-pandas
+```bash
+python app/myapp.py
+```
 
-3. Add the required files | Thêm file cần thiết
-Put these files into the project folder:
+NiceGUI will start Uvicorn on port 8080.  Navigate to `http://localhost:8080` in your browser and follow the steps.  The final step allows you to download a filled PDF.
 
-Mau-so-yeu-ly-lich-2-copy.pdf: official blank form template (not included)
+## Project Layout
 
-font-times-new-roman/SVN-Times New Roman 2.ttf: Vietnamese-compatible font
+```
+app/
+  myapp.py              # main NiceGUI application
+  utils.py              # form field schema and session helpers
+  form_data_builder.py  # blueprint describing form steps and PDF template
+  validation.py         # reusable validators
+  para.py               # option lists (provinces, etc.)
+assets/
+  TEMPLATE-V2.pdf       # blank form template
+  NotoSans-Regular.ttf  # font used when rendering the PDF
+tools/
+  coordinate_picker.html # utility for locating PDF coordinates
+```
 
-▶️ Run the App | Chạy ứng dụng
-bash
-Copy
-Edit
-streamlit run autoly_app.py
-Then go to: http://localhost:8501
+---
 
-🧪 Example Use Cases | Các tình huống sử dụng
-🏫 Students filling internship/job forms | Sinh viên nộp hồ sơ thực tập / xin việc
-
-🧑‍💼 New employee onboarding | Nhân sự khai báo lý lịch
-
-🧾 Admin simplification for individuals | Rút gọn thủ tục hành chính cho cá nhân
-
-📂 Project Structure | Cấu trúc dự án
-perl
-Copy
-Edit
-.
-├── autoly_app.py                     # Main Streamlit app
-├── utils.py                          # PDF generation logic
-├── Mau-so-yeu-ly-lich-2-copy.pdf    # Official form template (not included)
-├── font-times-new-roman/
-│   └── SVN-Times New Roman 2.ttf     # Font with Vietnamese support
-├── requirements.txt
-└── README.md
-⚠️ Notes | Lưu ý
-This app is for personal or internal use. The official template and font are not included in the public repo.
-
-You can customize the PDF template or add .docx export if needed.
-
-🙌 Acknowledgments | Ghi nhận
-Built by a Vietnamese student to simplify one of the most annoying tasks—filling out the same form every semester.
-
-Được phát triển bởi một sinh viên Việt Nam, nhằm giảm bớt nỗi khổ mỗi lần phải điền lại Sơ yếu lý lịch cho trường học hoặc cơ quan.
-
-📃 License | Giấy phép
-MIT License. See LICENSE.
-
-🖼 Screenshots | Ảnh minh họa
-Giao diện điền form	Xem trước file PDF
-
-python
-Copy
-Edit
-
-Let me know if you'd like to:
-
-- Replace the image paths with relative GitHub links after upload
-- Add a `.gitignore`
-- Deploy it via Streamlit Cloud (I'll generate `streamlit_app.py` or help with secrets/config)
-
-Ready to copy straight into your GitHub `README.md` file.
-
-
-
-
-
-
+This project currently ships a single template for private-sector dossiers.  You can extend `FORM_TEMPLATE_REGISTRY` in `form_data_builder.py` to support additional templates or step sequences.
