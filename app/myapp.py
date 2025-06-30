@@ -29,13 +29,13 @@ from datetime import datetime, date
 import logging
 
 # Import the new, powerful schema and utilities
-from form_data_builder import FormUseCaseType, FormTemplate, FORM_TEMPLATE_REGISTRY
-from utils import (
+from .form_data_builder import FormUseCaseType, FormTemplate, FORM_TEMPLATE_REGISTRY
+from .utils import (
     AppSchema, FormField,
     STEP_KEY, FORM_DATA_KEY, SELECTED_USE_CASE_KEY, # <-- ADD THIS
     FORM_ATTEMPTED_SUBMISSION_KEY, CURRENT_STEP_ERRORS_KEY,
 )
-from validation import EMAIL_PATTERN
+from .validation import EMAIL_PATTERN
 
 logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s - %(filename)s - %(levelname)s - %(message)s',
