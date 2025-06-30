@@ -1,7 +1,10 @@
 #!/bin/bash
 
-# This command tells Gunicorn to start your app.
-# It will run the 'app' variable, which is located inside the 'myapp.py' file,
-# which itself is inside the 'app' package.
-# The format is: [PACKAGE].[MODULE]:[VARIABLE]
+# This is the fix.
+# We are telling the Python interpreter to add the './app' directory
+# to the list of places it looks for modules.
+export PYTHONPATH="${PYTHONPATH}:."
+
+# Now when Gunicorn runs your app and your app tries to import 'validation',
+# Python will know to look inside the 'app' directory and will find it.
 gunicorn --worker-class uvicorn.workers.UvicornWorker app.myapp:app
