@@ -4,7 +4,7 @@ from typing import Any, NotRequired, TypedDict
 from collections.abc import Callable
 from dataclasses import dataclass
 import para # Assuming para.py exists and might be used for defaults
-from .form_data_builder import FormUseCaseType, FORM_TEMPLATE_REGISTRY
+from form_data_builder import FormUseCaseType, FORM_TEMPLATE_REGISTRY
 
 # ===================================================================
 # 1. CORE DATA STRUCTURES & TYPE ALIASES

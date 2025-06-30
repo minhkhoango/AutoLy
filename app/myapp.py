@@ -20,22 +20,22 @@ from validation import (
 import fitz
 import tempfile
 from pathlib import Path
-import os
 from typing_extensions import NotRequired
 import re
 from re import Pattern
 from datetime import datetime, date
 # from dateutil.relativedelta import relativedelta
 import logging
+import os
 
 # Import the new, powerful schema and utilities
-from .form_data_builder import FormUseCaseType, FormTemplate, FORM_TEMPLATE_REGISTRY
-from .utils import (
+from form_data_builder import FormUseCaseType, FormTemplate, FORM_TEMPLATE_REGISTRY
+from utils import (
     AppSchema, FormField,
     STEP_KEY, FORM_DATA_KEY, SELECTED_USE_CASE_KEY, # <-- ADD THIS
     FORM_ATTEMPTED_SUBMISSION_KEY, CURRENT_STEP_ERRORS_KEY,
 )
-from .validation import EMAIL_PATTERN
+from validation import EMAIL_PATTERN
 
 logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s - %(filename)s - %(levelname)s - %(message)s',
@@ -930,12 +930,10 @@ def main_page() -> None:
             update_step_content()
 
 if __name__ in {"__main__", "__mp_main__"}:
-    # This check is now less critical as the path comes from the blueprint,
-    # but it's a good sanity check for the default template on startup.
-    default_template_path = Path(FORM_TEMPLATE_REGISTRY[FormUseCaseType.PRIVATE_SECTOR]['pdf_template_path'])
-    if not default_template_path.exists():
-        print(f"WARNING: Default PDF template not found at '{default_template_path}'. PDF generation may fail.")
-    
-    storage_secret = os.environ.get('STORAGE_SECRET', 'a_default_secret_for_local_dev_only')
-    ui.run(storage_secret=storage_secret)
+    port = int(os.environ.get('PORT', 8080))
+    ui.run(
+        host='0.0.0.0',
+        port=port,
+        storage_secret=os.environ.get('STORAGE_SECRET', 'local_secret_key_for_dev')
+    )
 
