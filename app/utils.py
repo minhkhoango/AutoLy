@@ -1,7 +1,6 @@
 # utils.py
 from __future__ import annotations
-from nicegui import app
-from typing import Any, NotRequired, TypedDict, cast
+from typing import Any, NotRequired, TypedDict
 from collections.abc import Callable
 from dataclasses import dataclass
 import para # Assuming para.py exists and might be used for defaults
@@ -25,12 +24,15 @@ class FormField:
     label: str
     ui_type: str = 'text'
     options: list[str] | dict[str, str] | None = None
-    split_date: bool = True
+    split_date: bool = True # For PDF rendering
     default_value: Any = ''
+    
+    # NEW: Flag to control the visibility of the day selector in date inputs.
+    include_day: bool = True 
 
-    # The new, powerful PDF rendering metadata
     pdf_coords: dict[FormUseCaseType, tuple[float, float] | tuple[list[float], float]] | None = None
     pdf_columns: list[PDFColumn] | None = None
+    row_schema: type | None = None
 
 class DataframePDFColumn(TypedDict):
     """Defines how to map a single dataframe column """
@@ -48,15 +50,30 @@ class AppSchema:
     Defines all fields used in the application. Each field is an instance
     of the FormField dataclass, containing all its necessary metadata.
     """
-    # NOTE: Coordinates are (X, Y) from the bottom-left of the page.
-    # Page 1 Fields
+    class TrainingRow:
+        FROM = FormField(key='training_from', label='Từ (MM/YYYY)', ui_type='date', default_value=None, include_day=False)
+        TO = FormField(key='training_to', label='Đến (MM/YYYY)', ui_type='date', default_value=None, include_day=False)
+        UNIT = FormField(key='training_unit', label='Tên trường/Cơ sở đào tạo', ui_type='text')
+        FIELD = FormField(key='training_field', label='Ngành học', ui_type='text')
+        FORMAT = FormField(key='training_format', label='Hình thức', ui_type='select', 
+                            options=getattr(para, 'education_format', ['Chính quy']), default_value='Chính quy')
+        CERTIFICATE = FormField(key='training_certificate', label='Văn bằng/Chứng chỉ', ui_type='select', options=getattr(para, 'degrees', 
+                            ['Không có']), default_value='Không có')
+    
+    class WorkRow:
+        FROM = FormField(key='work_from', label='Từ (MM/YYYY)', ui_type='date', default_value=None, include_day=False)
+        TO = FormField(key='work_to', label='Đến (MM/YYYY)', ui_type='date', default_value=None, include_day=False)
+        UNIT = FormField(key='work_unit', label='Đơn vị công tác', ui_type='text')
+        ROLE = FormField(key='work_role', label='Chức vụ', ui_type='select', 
+                        options=getattr(para, 'work_position', ["Thực tập"]), default_value="Thực tập")
+
     FULL_NAME = FormField(key='full_name', label='HỌ VÀ TÊN (viết hoa)',
                           pdf_coords={FormUseCaseType.PRIVATE_SECTOR: (214.52, 179.88)})
     GENDER = FormField(key='gender', label='Giới tính', ui_type='radio', options=['Nam', 'Nữ'], default_value='Nam',
                        pdf_coords={FormUseCaseType.PRIVATE_SECTOR: (436.02, 179.88)})
     DOB = FormField(key='dob', label='Ngày sinh', ui_type='date', default_value=None,
                     pdf_coords={FormUseCaseType.PRIVATE_SECTOR: ([152.52, 202.02, 242.02], 201.5)})
-    BIRTH_PLACE = FormField(key='birth_place', label='Nơi sinh', ui_type='select', options=getattr(para, 'vn_province', ['Hà Nội', 'TP. Hồ Chí Minh', 'Thanh Hóa']), default_value='Hà Nội',
+    BIRTH_PLACE = FormField(key='birth_place', label='Nơi sinh', ui_type='select', options=getattr(para, 'vn_province', ['Hà Nội']), default_value='Hà Nội',
                             pdf_coords={FormUseCaseType.PRIVATE_SECTOR: (332.06, 201.5)})
     REGISTERED_ADDRESS = FormField(key='registered_address', label='Địa chỉ hộ khẩu', default_value='', 
                                    pdf_coords={FormUseCaseType.PRIVATE_SECTOR: (259.06, 244.83)})
@@ -78,6 +95,7 @@ class AppSchema:
     # The rendering function will calculate the position of subsequent rows.
     TRAINING_DATAFRAME = FormField(
         key='training_dataframe', label='Quá trình đào tạo', ui_type='dataframe',
+        row_schema=TrainingRow,
         pdf_coords={FormUseCaseType.PRIVATE_SECTOR: (62, 234)},
         pdf_columns=[
             PDFColumn(key='training_from', x_offset=0.0,
@@ -90,6 +108,7 @@ class AppSchema:
     )
     WORK_DATAFRAME = FormField(
         key='work_dataframe', label='Lịch sử làm việc',ui_type='dataframe',
+        row_schema=WorkRow,
         pdf_coords={FormUseCaseType.PRIVATE_SECTOR: (62, 414)},
         pdf_columns=[
             PDFColumn(key='work_from', x_offset=0,
@@ -148,31 +167,4 @@ CURRENT_STEP_ERRORS_KEY: str = 'current_step_errors'
 # --- Date Formats ---
 DATE_FORMAT_STORAGE: str = '%Y-%m-%d'
 
-# ===================================================================
-# 4. UI & DATA HELPER FUNCTIONS
-# ===================================================================
-
-# --- DECOMPOSED UI CREATION HELPERS ---
-def get_form_data() -> dict[str, Any]:
-    """Safely retrieves the form_data dictionary from user storage."""
-    user_storage = cast(dict[str, Any], app.storage.user)
-    if not isinstance(user_storage.get(FORM_DATA_KEY), dict):
-        user_storage[FORM_DATA_KEY] = {}
-    return cast(dict[str, Any], user_storage[FORM_DATA_KEY])
-
-# --- Helper to initialize form_data structure ---
-def initialize_form_data() -> None:
-    """Populates form_data with default values from the AppSchema."""
-    form_data = get_form_data()
-    if form_data: # Don't re-initialize if data already exists
-        return
-    
-    for field in AppSchema.get_all_fields():
-        if field.key not in form_data:
-            form_data[field.key] = field.default_value
-    
-    form_data[AppSchema.TRAINING_DATAFRAME.key] = []
-    form_data[AppSchema.WORK_DATAFRAME.key] = []
-    form_data[AppSchema.CHILD_DATAFRAME.key] = []
-    
     

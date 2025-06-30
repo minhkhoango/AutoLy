@@ -14,7 +14,7 @@ ValidatorFunc = Callable[[Any | None, dict[str, Any]], ValidationResult]
 # --- Regex Patterns (centralized) ---
 FULL_NAME_PATTERN: Pattern[str] = re.compile(r'^[A-ZÀÁẠẢÃÂẦẤẬẨẪĂẰẮẶẲẴĐÈÉẸẺẼÊỀẾỆỂỄÌÍỊỈĨÒÓỌỎÕÔỒỐỘỔỖƠỜỚỢỞỠÙÚỤỦŨƯỪỨỰỬỮỲÝỴỶỸ ]+$')
 PHONE_PATTERN: Pattern[str] = re.compile(r'^0\d{9}$')
-EMAIL_PATTERN: Pattern[str] = re.compile(r'^[^@]+@[^@]+\.[^@]+$')
+EMAIL_PATTERN: Pattern[str] = re.compile(r"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$")
 ID_NUMBER_PATTERN: Pattern[str] = re.compile(r'^(?:\d{9}|\d{12})$')
 YEAR_PATTERN: Pattern[str] = re.compile(r'^\d{4}$')
 NUMERIC_PATTERN: Pattern[str] = re.compile(r'^\d+$')
