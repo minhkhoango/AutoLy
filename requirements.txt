@@ -62,3 +62,4 @@ websockets==15.0.1
 wsproto==1.2.0
 yarl==1.20.0
 passlib
+Gunicorn
