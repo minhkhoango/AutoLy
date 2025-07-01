@@ -1,8 +1,12 @@
-# myapp.py
-
 # ===================================================================
 # 1. IMPORTS
 # ===================================================================
+import sqlite3
+import json
+import os
+import logging
+from pathlib import Path
+from passlib.context import CryptContext
 import calendar
 from nicegui import ui, app
 from typing import (
@@ -10,196 +14,153 @@ from typing import (
     TypeAlias, cast
 )
 from collections.abc import Callable
-from passlib.context import CryptContext
-
-# Assuming validation.py and para.py are in the same directory or accessible in PYTHONPATH
-from validation import (
-    ValidatorFunc,
-    required, required_choice, match_pattern, is_within_date_range, is_date_after
-)
 import fitz
 import tempfile
-from pathlib import Path
 from typing_extensions import NotRequired
-import re
-from re import Pattern
 from datetime import datetime, date
-# from dateutil.relativedelta import relativedelta
-import logging
-import os
 
-# Import the new, powerful schema and utilities
+# Local application imports
+from validation import (
+    ValidatorFunc, required, required_choice, match_pattern, is_within_date_range, is_date_after, EMAIL_PATTERN,
+    FULL_NAME_PATTERN, PHONE_PATTERN, NUMERIC_PATTERN, DATE_MMYYYY_PATTERN
+)
 from form_data_builder import FormUseCaseType, FormTemplate, FORM_TEMPLATE_REGISTRY
 from utils import (
-    AppSchema, FormField,
-    STEP_KEY, FORM_DATA_KEY, SELECTED_USE_CASE_KEY, # <-- ADD THIS
-    FORM_ATTEMPTED_SUBMISSION_KEY, CURRENT_STEP_ERRORS_KEY,
+    AppSchema, FormField, STEP_KEY, SELECTED_USE_CASE_KEY,
+    FORM_ATTEMPTED_SUBMISSION_KEY, CURRENT_STEP_ERRORS_KEY
 )
-from validation import EMAIL_PATTERN
 
-logging.basicConfig(level=logging.INFO,
-                    format='%(asctime)s - %(filename)s - %(levelname)s - %(message)s',
-                    datefmt='%Y-%m-%d %H:%M:%S',
-                    handlers=[logging.StreamHandler()])
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+
 # ===================================================================
-# 2. SECURE AUTH & IN-MEMORY DATABASE
+# 2. DATABASE SETUP (The Stone Tablet)
 # ===================================================================
 
-# This is our temporary user database. In a real app, this would be a database table.
-# Passwords should be hashed, but for the MVP, plaintext is fine to see the mechanism.
+# --- Define the path for our database file ---
+# Render provides a persistent disk at '/var/data'. We'll store our DB there.
+# This ensures the data survives restarts and deploys.
+DATA_DIR: Path = Path(os.environ.get('RENDER_DISK_PATH', '.'))
+DB_PATH: Path = DATA_DIR / "autoly.db"
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-# This is the "Hotel Register". It holds ALL data for ALL logged-in users.
-# Key: username, Value: that user's entire data dictionary.
-USER_DATABASE: dict[str, dict[str, Any]] = {}
+def get_db_connection() -> sqlite3.Connection:
+    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    return conn
 
-def get_current_user() -> str | None:
-    """Safely retrieves the username from the user's session storage."""
-    user_storage = cast(dict[str, Any], app.storage.user)
-    return cast(str | None, user_storage.get('username'))
+def setup_database() -> None:
+    logger.info(f"Setting up database at: {DB_PATH}")
+    try:
+        if not DATA_DIR.exists():
+            DATA_DIR.mkdir(parents=True, exist_ok=True)
+        with get_db_connection() as conn:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS users (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    username TEXT UNIQUE NOT NULL,
+                    hashed_password TEXT NOT NULL,
+                    form_data TEXT
+                );
+            """)
+            conn.commit()
+        logger.info("Database setup successful.")
+    except sqlite3.Error as e:
+        logger.error(f"Database setup failed: {e}"); raise
 
-# --- NEW: Password verification function ---
-def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """Compares a plain password to a hashed one."""
-    return pwd_context.verify(plain_password, hashed_password)
-
-# --- NEW: Password hashing function ---
 def get_password_hash(password: str) -> str:
     """Creates a hash from a plain password."""
     return pwd_context.hash(password)
 
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    """Compares a plain password to a hashed one."""
+    return pwd_context.verify(plain_password, hashed_password)
+
 # ===================================================================
-# 3. CENTRALIZED DATA HELPERS (Now user-aware)
+# 3. REFACTORED DATA HELPERS (Now talk to the DB)
 # ===================================================================
-def get_user_storage() -> dict[str, Any]:
-    """
-    Retrieves the data dictionary for the currently logged-in user from the global store.
-    """
-    username = get_current_user()
-    if not username:
-        # This should not happen on a protected page, but as a safeguard:
-        raise PermissionError("Attempted to access user storage without being logged in.")
-    
-    if username not in USER_DATABASE:
-        USER_DATABASE[username] = {}
-    
-    return USER_DATABASE[username]
+
+def get_current_user() -> str | None:
+    """Safely retrieves the username from the user's session storage."""
+    # Ensure app.storage.user is treated as a dict
+    user_storage = cast(dict[str, Any], app.storage.user)
+    return cast(str | None, user_storage.get('username'))
 
 def get_form_data() -> dict[str, Any]:
     """
-    Now fetches form_data from the correct user's slot in the
-    global USER_DATABASE.
+    Retrieves the user's form data from the IN-MEMORY session storage.
+    This is the single source of truth for the UI.
     """
-    user_storage = get_user_storage()
-    if not isinstance(user_storage.get(FORM_DATA_KEY), dict):
-        user_storage[FORM_DATA_KEY] = {}
-    return cast(dict[str, Any], user_storage[FORM_DATA_KEY])
+    user_storage = cast(dict[str, Any], app.storage.user)
+    # This now reads from the live session, not the DB.
+    form_data = user_storage.get('form_data')
+    if form_data is None:
+        # This is a fallback, but in a proper flow, 'form_data' should always exist.
+        logger.warning("form_data was missing from app.storage.user. Returning empty dict.")
+        return {}
+    return cast(dict[str, Any], form_data)
 
-def initialize_form_data_if_new(username: str) -> None:
+def save_form_data_to_db() -> None:
     """
-    This now only runs during signup to create the initial data structure
-    for a brand new user.
+    Serializes the user's CURRENT IN-MEMORY form data to JSON 
+    and saves it to the database. Call this function only when you need to persist.
     """
-    user_storage = USER_DATABASE.get(username, {})
-    
-    # This function is now simpler. It's just for setting up the form defaults.
-    # The main user record is created in the signup handler.
-    form_data: dict[str, Any] = {}
-    user_storage['form_data'] = form_data
-    
-    # Initialize all step-related data
-    user_storage['form_data'][STEP_KEY] = 0
-    user_storage['form_data'][SELECTED_USE_CASE_KEY] = None
-    user_storage['form_data'][FORM_ATTEMPTED_SUBMISSION_KEY] = False
-    user_storage['form_data'][CURRENT_STEP_ERRORS_KEY] = {}
-    
-    # Populate the form_data dictionary with all field defaults
-    for field in AppSchema.get_all_fields():
-        form_data[field.key] = field.default_value
-    
-    # Initialize dataframe fields as empty lists
-    form_data[AppSchema.TRAINING_DATAFRAME.key] = []
-    form_data[AppSchema.WORK_DATAFRAME.key] = []
-    
-    
+    username = get_current_user()
+    if not username:
+        raise PermissionError("User not authenticated.")
 
-# --- Modernized Type Aliases ---
+    # Get the data from the single source of truth: app.storage.user
+    form_data = get_form_data()
+
+    try:
+        form_data_json = json.dumps(form_data)
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("UPDATE users SET form_data = ? WHERE username = ?", (form_data_json, username))
+            conn.commit()
+            logger.info(f"Successfully saved form data to DB for user '{username}'.")
+    except sqlite3.Error as e:
+        logger.error(f"Failed to save form_data to DB for user '{username}': {e}")
+
+# ===================================================================
+# 4. CORE LOGIC & NAVIGATION (With DB Persistence)
+# ===================================================================
+
+# --- Type Definitions (from your original file) ---
 SimpleValidatorEntry: TypeAlias = tuple[str, list[ValidatorFunc]]
 DataframeColumnRules: TypeAlias = dict[str, list[ValidatorFunc]]
 DataframeValidatorEntry: TypeAlias = tuple[str, DataframeColumnRules]
 ValidationEntry: TypeAlias = SimpleValidatorEntry | DataframeValidatorEntry
-
-# --- Blueprint TypedDicts ---
-# This makes our STEPS_DEFINITION fully type-checked and self-documenting.
 class FieldConfig(TypedDict):
-    field: FormField
-    validators: list[ValidatorFunc]
-
+    field: FormField; validators: list[ValidatorFunc]
 class DataframeConfig(TypedDict):
-    field: FormField
-    validators: DataframeColumnRules
-
+    field: FormField; validators: DataframeColumnRules
 class PanelInfo(TypedDict):
-    """Defines the structure for a single panel within a tabbed layout."""
-    label: str
-    fields: list[FieldConfig]
-
+    label: str; fields: list[FieldConfig]
 class TabbedLayout(TypedDict):
-    """Defines the structure for the entire tabbed layout object."""
-    type: str
-    tabs: dict[str, PanelInfo]
-
+    type: str; tabs: dict[str, PanelInfo]
 class StepDefinition(TypedDict):
-    id: int
-    name: str
-    title: str
-    subtitle: str
-    render_func: Callable[['StepDefinition'], None] # Points to the generic or a special renderer
-    fields: list[FieldConfig]
-    dataframes: list[DataframeConfig] # For complex list editors
-    needs_clearance: bool | None
-    layout: NotRequired[TabbedLayout] # The key may not exist.
+    id: int; name: str; title: str; subtitle: str
+    render_func: Callable[['StepDefinition'], None]
+    fields: list[FieldConfig]; dataframes: list[DataframeConfig]
+    needs_clearance: bool | None; layout: NotRequired[TabbedLayout]
 
-# ===================================================================
-# 2. PRIVATE HELPER FUNCTIONS (The Specialists)
-# ===================================================================
-
-def _validate_simple_field(
-    field_key: str, validator_list: list[ValidatorFunc],
-    form_data: dict[str, Any], errors: dict[str, str]
-) -> bool:
-    """
-    Validates a single, simple form field.
-    Returns True if valid, False otherwise.
-    Appends error messages to the `errors` dictionary if invalid.
-    """
-    is_field_valid: bool = True
-    value_to_validate: Any = form_data.get(field_key)
-
+# --- Validation Helpers (from your original file) ---
+def _validate_simple_field(field_key: str, validator_list: list[ValidatorFunc], form_data: dict[str, Any], errors: dict[str, str]) -> bool:
+    is_field_valid = True
+    value_to_validate = form_data.get(field_key)
     for validator_func in validator_list:
         is_valid, msg = validator_func(value_to_validate, form_data)
         if not is_valid:
             is_field_valid = False
-            # Assign the error message and stop validating this field
-            if field_key not in errors:
-                errors[field_key] = msg
+            if field_key not in errors: errors[field_key] = msg
             break
     return is_field_valid
 
-def _validate_dataframe_field(
-    dataframe_key: str, column_rules: DataframeColumnRules,
-    form_data: dict[str, Any], errors: dict[str, str]
-) -> bool:
-    """
-    Validates all cells within a dataframe field.
-    Returns True if the entire dataframe is valid, False otherwise.
-    Appends cell-specific error messages to the `errors` dictionary.
-    """
-    is_dataframe_valid: bool = True
-    dataframe_value: list[dict[str, Any]] = form_data.get(dataframe_key, [])
-    
+def _validate_dataframe_field(dataframe_key: str, column_rules: DataframeColumnRules, form_data: dict[str, Any], errors: dict[str, str]) -> bool:
+    is_dataframe_valid = True
+    dataframe_value = form_data.get(dataframe_key, [])
     for row_index, row_data in enumerate(dataframe_value):
         for col_key, validator_list in column_rules.items():
             cell_value = row_data.get(col_key)
@@ -207,42 +168,24 @@ def _validate_dataframe_field(
                 is_valid, msg = validator_func(cell_value, row_data)
                 if not is_valid:
                     is_dataframe_valid = False
-                    # Create a unique key for the error: "dataframe_key_rowIndex_colKey"
-                    error_key: str = f"{dataframe_key}_{row_index}_{col_key}"
-                    if error_key not in errors:
-                        errors[error_key] = msg
-                    break  # Stop validating this cell on the first error
+                    error_key = f"{dataframe_key}_{row_index}_{col_key}"
+                    if error_key not in errors: errors[error_key] = msg
+                    break
     return is_dataframe_valid
 
-def execute_step_validators(
-    step_def: StepDefinition,
-    form_data: dict[str, Any]
-) -> tuple[bool, dict[str, str]]:
-    """
-    Executes all validators for a given step by reading the rules directly
-    from the step's definition blueprint. This is the correct, type-safe implementation.
-    """
+def execute_step_validators(step_def: StepDefinition, form_data: dict[str, Any]) -> tuple[bool, dict[str, str]]:
     new_errors: dict[str, str] = {}
-    is_step_valid: bool = True
-
-    # Validate the simple fields defined directly in the step
+    is_step_valid = True
     for field_conf in step_def.get('fields', []):
         if not _validate_simple_field(field_conf['field'].key, field_conf['validators'], form_data, new_errors):
             is_step_valid = False
-            
-    # Validate the more complex dataframe fields
     for df_conf in step_def.get('dataframes', []):
         if not _validate_dataframe_field(df_conf['field'].key, df_conf['validators'], form_data, new_errors):
             is_step_valid = False
-
     return is_step_valid, new_errors
 
-# ===================================================================
-# 3. CORE LOGIC & NAVIGATION
-# ===================================================================
-
+# --- Navigation (Now with persistence) ---
 async def _handle_step_confirmation(button: ui.button) -> None:
-    """The core logic for validating a step and moving to the next."""
     button.disable()
     try:
         form_data = get_form_data()
@@ -250,26 +193,75 @@ async def _handle_step_confirmation(button: ui.button) -> None:
         current_step_def = STEPS_BY_ID.get(current_step_id)
         if not current_step_def: return
 
-        # This now passes the correct argument type (StepDefinition) and is type-safe.
         all_valid, new_errors = execute_step_validators(current_step_def, form_data)
-
         form_data[FORM_ATTEMPTED_SUBMISSION_KEY] = True
         form_data[CURRENT_STEP_ERRORS_KEY] = new_errors
 
         if all_valid:
             if current_step_id == 0:
                 form_data[SELECTED_USE_CASE_KEY] = form_data.get(AppSchema.FORM_TEMPLATE_SELECTOR.key)
+            
+            # --->>> SAVE TO DB ON SUCCESS <<<---
+            save_form_data_to_db() 
+            
             ui.notify("Thông tin hợp lệ!", type='positive')
             next_step()
         else:
-            # --- THIS IS THE FIX ---
-            # Instead of one generic message, we loop through the actual errors.
             for error_message in new_errors.values():
                 ui.notification(error_message, type='negative', multi_line=True)
-            # We still refresh the UI to highlight the fields themselves.
             update_step_content.refresh()
     finally:
         button.enable()
+
+def _get_current_form_template() -> FormTemplate | None:
+    form_data = get_form_data()
+    use_case_value_str = form_data.get(SELECTED_USE_CASE_KEY)
+    if not use_case_value_str: return None
+    try:
+        selected_use_case = FormUseCaseType[use_case_value_str]
+        return FORM_TEMPLATE_REGISTRY.get(selected_use_case)
+    except KeyError: return None
+
+def next_step() -> None:
+    form_data = get_form_data()
+    current_step_id = form_data.get(STEP_KEY, 0)
+    form_template = _get_current_form_template()
+    if form_template:
+        step_sequence = form_template['step_sequence']
+        if current_step_id == 0:
+            form_data[STEP_KEY] = step_sequence[0] if step_sequence else 0
+        else:
+            try:
+                current_index = step_sequence.index(current_step_id)
+                if current_index < len(step_sequence) - 1:
+                    form_data[STEP_KEY] = step_sequence[current_index + 1]
+            except ValueError: form_data[STEP_KEY] = 0
+    else: form_data[STEP_KEY] = 0
+    form_data[FORM_ATTEMPTED_SUBMISSION_KEY] = False
+    save_form_data_to_db() # Persist the new step
+    update_step_content.refresh()
+
+def prev_step() -> None:
+    form_data = get_form_data()
+    current_step_id = form_data.get(STEP_KEY, 0)
+    form_template = _get_current_form_template()
+    if form_template:
+        step_sequence = form_template['step_sequence']
+        try:
+            current_index = step_sequence.index(current_step_id)
+            form_data[STEP_KEY] = step_sequence[current_index - 1] if current_index > 0 else 0
+        except ValueError: form_data[STEP_KEY] = 0
+    else: form_data[STEP_KEY] = 0
+    form_data[FORM_ATTEMPTED_SUBMISSION_KEY] = False
+    save_form_data_to_db()
+    update_step_content.refresh()
+
+# ===================================================================
+# 5. UI RENDERING & PDF (Unchanged Logic, but now reads from DB via helpers)
+# ===================================================================
+# --- Your PDF and UI rendering functions go here ---
+# They don't need to change because they use get_form_data(), which now reads from the DB.
+# (Pasting your functions from the provided file for completeness)
 
 def render_text_on_pdf(
     template_path: Path,
@@ -489,10 +481,6 @@ def _render_dataframe_editor(df_conf: DataframeConfig) -> None:
 # ===================================================================
 # UI CREATION HELPERS (Moved from utils.py)
 # ===================================================================
-
-# myapp.py
-
-# REPLACE THE ENTIRE FUNCTION WITH THIS
 def _create_composite_date_input(
     field: FormField,
     data_source: dict[str, Any],
@@ -501,11 +489,10 @@ def _create_composite_date_input(
     form_attempted: bool
 ) -> None:
     """
-    A robust, schema-aware date picker that correctly handles and saves
-    both full 'YYYY-MM-DD' dates and partial 'MM/YYYY' dates.
-    This version uses explicit, readable event handlers instead of complex lambdas.
+    A robust, schema-aware date picker that allows day selection at any time
+    and auto-corrects the day based on the selected month and year.
     """
-    # 1. Parse the initial value from the data source
+    # 1. Parse the initial value from the data source (no changes here)
     stored_value = data_source.get(field.key)
     d, m, y = None, None, None
     if isinstance(stored_value, str):
@@ -517,12 +504,12 @@ def _create_composite_date_input(
                 dt_obj = datetime.strptime(stored_value, '%Y-%m-%d').date()
                 d, m, y = dt_obj.day, dt_obj.month, dt_obj.year
         except (ValueError, TypeError, IndexError):
-            pass # Start with a blank slate if parsing fails
+            pass
 
-    # 2. Use a plain Python dictionary for local state.
+    # 2. Use a plain Python dictionary for local state (no changes here)
     state = {'d': d, 'm': m, 'y': y}
 
-    # 3. The sync function remains the brain.
+    # 3. The sync function remains the brain (no changes here)
     def sync_model() -> None:
         if not (state['y'] and state['m']):
             data_source[field.key] = None
@@ -531,37 +518,42 @@ def _create_composite_date_input(
         if field.include_day:
             if state['d']:
                 try:
+                    # This will raise a ValueError for an invalid date like Feb 30
                     data_source[field.key] = date(state['y'], state['m'], state['d']).strftime('%Y-%m-%d')
                 except ValueError:
-                    data_source[field.key] = None # Invalid date (e.g., Feb 30)
+                    data_source[field.key] = None
             else:
                 data_source[field.key] = None
         else:
             data_source[field.key] = f"{state['m']:02d}/{state['y']}"
 
-    # 4. EXPLICIT HANDLERS - This is the core fix.
+    # 4. EXPLICIT HANDLERS - with one small change
     
-    # This refreshable container will hold just the day selector
     @ui.refreshable
     def day_select_container() -> None:
-        # We define the handler inside so it has access to 'state'
         def handle_day_change(e: Any) -> None:
             state['d'] = e.value
             sync_model()
             
-        day_options = list(range(1, calendar.monthrange(state['y'], state['m'])[1] + 1)) if state['y'] and state['m'] else []
+        # --- THIS IS THE ONLY LINE THAT CHANGES ---
+        # Always show days 1-31, letting the logic below handle validation.
+        day_options = list(range(1, 32))
+        
         is_error = form_attempted and current_errors.get(error_key) and not state['d']
         ui.select(day_options, value=state['d'], label='Ngày', on_change=handle_day_change).classes('col').props(f"outlined dense error={is_error}")
 
+    # The auto-correction logic was already here and works perfectly.
     def handle_month_year_change() -> None:
         """A single handler for both month and year changes."""
-        # If the date is now invalid (e.g., from Mar 31 to Feb), fix the day.
+        # If a month/year is selected, check if the current day is valid.
         if field.include_day and state['y'] and state['m']:
+            # Find the last valid day of the selected month/year.
             max_days = calendar.monthrange(state['y'], state['m'])[1]
+            # If the user's selected day is greater, cap it at the max.
             if state['d'] and state['d'] > max_days:
                 state['d'] = max_days
         
-        # We must tell the day selector to re-render its options.
+        # We must tell the day selector to re-render to show the corrected value.
         day_select_container.refresh()
         sync_model()
 
@@ -573,7 +565,7 @@ def _create_composite_date_input(
         state['y'] = e.value
         handle_month_year_change()
 
-    # 5. Build the component using the new, clean handlers.
+    # 5. Build the component using the new, clean handlers (no changes here)
     with ui.column().classes('w-full no-wrap'):
         ui.label(field.label).classes('text-caption q-mb-xs')
         with ui.row().classes('w-full items-start no-wrap'):
@@ -699,12 +691,6 @@ def render_review_step(step_def: 'StepDefinition') -> None:
 # ===================================================================
 # 5. DEFINE THE BLUEPRINT & NAVIGATION ENGINE
 # ===================================================================
-FULL_NAME_PATTERN: Pattern[str] = re.compile(r'^[A-ZÀÁẠẢÃÂẦẤẬẨẪĂẰẮẶẲẴĐÈÉẸẺẼÊỀẾỆỂỄÌÍỊỈĨÒÓỌỎÕÔỒỐỘỔỖƠỜỚỢỞỠÙÚỤỦŨƯỪỨỰỬỮỲÝỴỶỸ ]+$')
-PHONE_PATTERN: Pattern[str] = re.compile(r'^0\d{9}$')
-ID_NUMBER_PATTERN: Pattern[str] = re.compile(r'^(?:\d{9}|\d{12})$')
-NUMERIC_PATTERN: Pattern[str] = re.compile(r'^\d+$')
-SALARY_PATTERN: Pattern[str] = re.compile(r"^\d+$|^\d{1,3}(?:[.,]\d{3})*$")
-DATE_MMYYYY_PATTERN: Pattern[str] = re.compile(r'^(0[1-9]|1[0-2])/\d{4}$')
 age_validators: list[ValidatorFunc] = [required("Vui lòng điền năm sinh."), match_pattern(NUMERIC_PATTERN, "Năm sinh phải là một con số.")]
 
 STEPS_BY_ID: dict[int, StepDefinition] = {
@@ -746,61 +732,6 @@ STEPS_BY_ID: dict[int, StepDefinition] = {
     7: {'id': 7, 'name': 'awards', 'title': 'Khen thưởng & Kỷ luật', 'subtitle': 'Thông tin về khen thưởng và kỷ luật (nếu có).', 'render_func': render_generic_step, 'needs_clearance': None, 'fields': [{'field': AppSchema.AWARD, 'validators': [required_choice("Vui lòng chọn khen thưởng.")]}, {'field': AppSchema.DISCIPLINE, 'validators': []}], 'dataframes': []},
     16: {'id': 16, 'name': 'review', 'title': 'Xem lại & Hoàn tất', 'subtitle': 'Kiểm tra lại toàn bộ thông tin và tạo file PDF.', 'render_func': render_review_step, 'needs_clearance': None, 'fields': [], 'dataframes': []},
 }
-
-def _get_current_form_template() -> FormTemplate | None:
-    """Looks up the blueprint for the user's selected form use case."""
-    form_data = get_form_data()
-    use_case_value_str = form_data.get(SELECTED_USE_CASE_KEY)
-    if not use_case_value_str:
-        return None
-    try:
-        selected_use_case = FormUseCaseType[use_case_value_str]
-        return FORM_TEMPLATE_REGISTRY.get(selected_use_case)
-    except KeyError:
-        return None
-
-def next_step() -> None:
-    """Navigates to the next step based on the selected template's defined sequence."""
-    form_data = get_form_data()
-    current_step_id = form_data.get(STEP_KEY, 0)
-    
-    form_template = _get_current_form_template()
-    if not form_template:
-        form_data[STEP_KEY] = 0
-    else:
-        step_sequence = form_template['step_sequence']
-        if current_step_id == 0:
-            form_data[STEP_KEY] = step_sequence[0] if step_sequence else 0
-        else:
-            try:
-                current_index = step_sequence.index(current_step_id)
-                if current_index < len(step_sequence) - 1:
-                    form_data[STEP_KEY] = step_sequence[current_index + 1]
-            except ValueError:
-                form_data[STEP_KEY] = 0
-    
-    form_data[FORM_ATTEMPTED_SUBMISSION_KEY] = False
-    update_step_content.refresh()
-
-
-def prev_step() -> None:
-    """Navigates to the previous step in the sequence or back to the selector."""
-    form_data = get_form_data()
-    current_step_id = form_data.get(STEP_KEY, 0)
-
-    form_template = _get_current_form_template()
-    if not form_template:
-        form_data[STEP_KEY] = 0
-    else:
-        step_sequence = form_template['step_sequence']
-        try:
-            current_index = step_sequence.index(current_step_id)
-            form_data[STEP_KEY] = step_sequence[current_index - 1] if current_index > 0 else 0
-        except ValueError:
-            form_data[STEP_KEY] = 0
-            
-    form_data[FORM_ATTEMPTED_SUBMISSION_KEY] = False
-    update_step_content.refresh()
  
 @ui.refreshable
 def update_step_content() -> None:
@@ -811,79 +742,68 @@ def update_step_content() -> None:
         step_to_render['render_func'](step_to_render)
     else:
         ui.label(f"Lỗi: Bước không xác định ({current_step_id})").classes('text-negative text-h6')
-        ui.button("Bắt đầu lại", on_click=lambda: (app.storage.user.clear(), ui.navigate.to('/'))).props('color=primary unelevated')
 
 # ===================================================================
-# 6. MAIN PAGE AND APP STARTUP
+# 6. PAGE ROUTING & AUTH (Now DB-driven)
 # ===================================================================
-
-@ui.page('/login')
-def login_page() -> None:
-    """The page where users enter their credentials."""
-    def attempt_login() -> None:
-        username = username_input.value.strip()
-        password = password_input.value
-
-        user_record = USER_DATABASE.get(username)
-        # Check 1: Does the user exist?
-        # Check 2: Does the password match the hash?
-        if not user_record or not verify_password(password, user_record['hashed_password']):
-            ui.notify('Sai tên đăng nhập hoặc mật khẩu.', color='negative')
-            return
-
-        # If successful, create the session "key card"
-        app.storage.user['username'] = username
-        app.storage.user['authenticated'] = True
-        ui.navigate.to('/')
-
-    with ui.card().classes('absolute-center'):
-        ui.label('Đăng nhập AutoLý').classes('text-h6 self-center')
-        username_input = ui.input('Email', on_change=lambda e: e.value.strip()).on('keydown.enter', attempt_login)
-        password_input = ui.input('Mật khẩu', password=True, password_toggle_button=True).on('keydown.enter', attempt_login)
-        ui.button('Đăng nhập', on_click=attempt_login).classes('self-center w-full')
-        ui.label("Chưa có tài khoản?").classes('text-center self-center q-mt-md')
-        ui.button('Đăng ký ngay', on_click=lambda: ui.navigate.to('/signup')).props('flat color=primary').classes('self-center w-full')
 
 @ui.page('/signup')
 def signup_page() -> None:
-    """NEW: Page for users to create a new account."""
+    """Page for users to create a new account, now writing to the database."""
     async def attempt_signup() -> None:
-        # --- Validation ---
         username = username_input.value.strip()
         password = password_input.value
         password_confirm = password_confirm_input.value
-
+        
+        # Your existing validation logic...
         errors = False
         if not EMAIL_PATTERN.match(username):
-            username_input.error = "Vui lòng nhập email hợp lệ."
-            errors = True
-        if username in USER_DATABASE:
-            username_input.error = "Email này đã được sử dụng."
-            errors = True
+            username_input.error = "Vui lòng nhập email hợp lệ."; errors = True
         if len(password) < 8:
-            password_input.error = "Mật khẩu phải có ít nhất 8 ký tự."
-            errors = True
+            password_input.error = "Mật khẩu phải có ít nhất 8 ký tự."; errors = True
         if password != password_confirm:
-            password_confirm_input.error = "Mật khẩu không khớp."
-            errors = True
+            password_confirm_input.error = "Mật khẩu không khớp."; errors = True
+        if errors: return
         
-        if errors:
-            return
-
-        # --- Create User ---
-        hashed_password = get_password_hash(password)
-        USER_DATABASE[username] = {
-            'hashed_password': hashed_password
+        # 1. Create the initial, default form data dictionary
+        initial_data: dict[str, Any] = {
+            STEP_KEY: 0,
+            SELECTED_USE_CASE_KEY: None,
+            FORM_ATTEMPTED_SUBMISSION_KEY: False,
+            CURRENT_STEP_ERRORS_KEY: {}
         }
-        initialize_form_data_if_new(username) # Setup the default form data for the new user
+        for field in AppSchema.get_all_fields():
+            initial_data[field.key] = field.default_value
         
-        logger.info(f"New user created: {username}")
-        with ui.dialog() as dialog, ui.card():
-            ui.label('Tạo tài khoản thành công! Bạn có thể đăng nhập ngay bây giờ.')
-            ui.button('OK', on_click=lambda: (dialog.close(), ui.navigate.to('/login')))
-        # Then we open the dialog we just defined.
-        dialog.open()
+        # 2. Serialize it to a JSON string
+        initial_data_json: str = json.dumps(initial_data)
+        
+        # 3. Hash the password
+        hashed_pass: str = get_password_hash(password)
+        
+        # --- Perform a single, atomic INSERT ---
+        try:
+            with get_db_connection() as conn:
+                cursor = conn.cursor()
+                # Insert username, password, AND form_data all at once.
+                cursor.execute(
+                    "INSERT INTO users (username, hashed_password, form_data) VALUES (?, ?, ?)",
+                    (username, hashed_pass, initial_data_json)
+                )
+                conn.commit()
             
+            logger.info(f"New user '{username}' created atomically in database.")
+            with ui.dialog() as dialog, ui.card():
+                ui.label('Tạo tài khoản thành công! Bạn có thể đăng nhập ngay bây giờ.')
+                ui.button('OK', on_click=lambda: (dialog.close(), ui.navigate.to('/login')))
+            dialog.open()
+
+        except sqlite3.IntegrityError:
+            username_input.error = "Email này đã được sử dụng."
+        except sqlite3.Error as e:
+            logger.error(f"Atomic signup failed for '{username}': {e}")
+            ui.notify("Đã có lỗi xảy ra, vui lòng thử lại.", color='negative')
+
     with ui.card().classes('absolute-center'):
         ui.label('Tạo tài khoản mới').classes('text-h6 self-center')
         username_input = ui.input('Email', on_change=lambda e: (e.value.strip(), setattr(username_input, 'error', None)))
@@ -892,17 +812,53 @@ def signup_page() -> None:
         ui.button('Đăng ký', on_click=attempt_signup).classes('self-center w-full q-mt-md')
         ui.button('Quay lại Đăng nhập', on_click=lambda: ui.navigate.to('/login')).props('flat color=primary').classes('self-center w-full')
 
+@ui.page('/login')
+def login_page() -> None:
+    """Login page, now reads from the database."""
+    def attempt_login() -> None:
+        username = username_input.value.strip()
+        password = password_input.value
+        try:
+            with get_db_connection() as conn:
+                cursor = conn.cursor()
+                # Fetch password AND the form data at the same time
+                cursor.execute("SELECT hashed_password, form_data FROM users WHERE username = ?", (username,))
+                row = cursor.fetchone()
+
+            if not row or not verify_password(password, row['hashed_password']):
+                ui.notify('Sai tên đăng nhập hoặc mật khẩu.', color='negative')
+                return
+
+            app.storage.user['username'] = username
+            app.storage.user['authenticated'] = True
+            
+            # Load the form data from the DB into the session storage
+            if row['form_data']:
+                app.storage.user['form_data'] = json.loads(row['form_data'])
+            else:
+                # Fallback for users who might not have data yet.
+                app.storage.user['form_data'] = {} 
+            
+            ui.navigate.to('/')
+        except (sqlite3.Error, json.JSONDecodeError) as e:
+            logger.error(f"Login failed for '{username}': {e}")
+            ui.notify("Đã có lỗi xảy ra, vui lòng thử lại.", color='negative')
+    
+    with ui.card().classes('absolute-center'):
+        ui.label('Đăng nhập AutoLý').classes('text-h6 self-center')
+        username_input = ui.input('Email', on_change=lambda e: e.value.strip()).on('keydown.enter', attempt_login)
+        password_input = ui.input('Mật khẩu', password=True, password_toggle_button=True).on('keydown.enter', attempt_login)
+        ui.button('Đăng nhập', on_click=attempt_login).classes('self-center w-full')
+        ui.label("Chưa có tài khoản?").classes('text-center self-center q-mt-md')
+        ui.button('Đăng ký ngay', on_click=lambda: ui.navigate.to('/signup')).props('flat color=primary').classes('self-center w-full')
+
 @ui.page('/')
 def main_page() -> None:
-    # 1. First, check the browser's session cookie (the "key card").
-    #    This check is cheap and doesn't require accessing the main data store.
     if not cast(dict[str, Any], app.storage.user).get('authenticated'):
         ui.navigate.to('/login')
         return
 
     def logout() -> None:
-        # Correctly clear the session cookie to log the user out.
-        # This does NOT delete their data in USER_DATA_STORE.
         app.storage.user.clear()
         ui.navigate.to('/login')
 
@@ -910,30 +866,23 @@ def main_page() -> None:
     with ui.header(elevated=True).classes('bg-primary text-white q-pa-sm items-center'):
         ui.label("📝 AutoLý – Kê khai Sơ yếu lý lịch").classes('text-h5')
         ui.space()
-        
-        # User info and logout button
         with ui.row().classes('items-center'):
             ui.label(f"Xin chào, {get_current_user()}!").classes('q-mr-md')
             ui.button('Đăng xuất', on_click=logout, color='white', icon='logout').props('flat dense')
-        
-        # Debug menu remains, but now it shows the *entire* data store
-        with ui.button(icon='bug_report', color='white').props('flat round dense'):
-            with ui.menu().classes('bg-grey-2 shadow-3'):
-                with ui.card().style("min-width: 450px; max-width: 90vw;"):
-                    with ui.expansion("Toàn bộ dữ liệu người dùng (USER_DATABASE)", icon="storage").classes("w-full"):
-                        # This shows the data for ALL users, demonstrating isolation.
-                        ui.json_editor({'value': USER_DATABASE}).props('readonly')
-
-    with ui.card().classes('q-mx-auto q-my-md q-pa-md shadow-4') \
-                  .style('width: 95%; max-width: 900px;'):
+    
+    with ui.card().classes('q-mx-auto q-my-md q-pa-md shadow-4').style('width: 95%; max-width: 900px;'):
         with ui.column().classes('w-full'):
             update_step_content()
 
 if __name__ in {"__main__", "__mp_main__"}:
+    # This is the most important new step.
+    # We set up the database before the app starts listening for requests.
+    setup_database()
+
     port = int(os.environ.get('PORT', 8080))
     ui.run(
         host='0.0.0.0',
         port=port,
-        storage_secret=os.environ.get('STORAGE_SECRET', 'local_secret_key_for_dev')
+        storage_secret=os.environ.get('STORAGE_SECRET', 'a_very_secure_secret_key_for_local_dev')
     )
 

@@ -96,6 +96,7 @@ class AppSchema:
     TRAINING_DATAFRAME = FormField(
         key='training_dataframe', label='Quá trình đào tạo', ui_type='dataframe',
         row_schema=TrainingRow,
+        default_value=[],
         pdf_coords={FormUseCaseType.PRIVATE_SECTOR: (62, 234)},
         pdf_columns=[
             PDFColumn(key='training_from', x_offset=0.0,
@@ -109,6 +110,7 @@ class AppSchema:
     WORK_DATAFRAME = FormField(
         key='work_dataframe', label='Lịch sử làm việc',ui_type='dataframe',
         row_schema=WorkRow,
+        default_value=[],
         pdf_coords={FormUseCaseType.PRIVATE_SECTOR: (62, 414)},
         pdf_columns=[
             PDFColumn(key='work_from', x_offset=0,

@@ -19,6 +19,8 @@ ID_NUMBER_PATTERN: Pattern[str] = re.compile(r'^(?:\d{9}|\d{12})$')
 YEAR_PATTERN: Pattern[str] = re.compile(r'^\d{4}$')
 NUMERIC_PATTERN: Pattern[str] = re.compile(r'^\d+$')
 DATE_FORMAT_STORAGE: str = '%Y-%m-%d' 
+SALARY_PATTERN: Pattern[str] = re.compile(r"^\d+$|^\d{1,3}(?:[.,]\d{3})*$")
+DATE_MMYYYY_PATTERN: Pattern[str] = re.compile(r'^(0[1-9]|1[0-2])/\d{4}$')
 
 # ===================================================================
 # GENERIC VALIDATOR GENERATORS (Our Reusable Building Blocks)
