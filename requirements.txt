@@ -6,4 +6,4 @@ PyMuPDF
 # Server & Deployment
 uvicorn
 gunicorn
-python-dote
+python-dotenv
