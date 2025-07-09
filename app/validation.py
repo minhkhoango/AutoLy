@@ -1,9 +1,9 @@
-# validators.py
+# app/validation.py
 from __future__ import annotations
 import re
-from typing import Any, cast
-from collections.abc import Callable
 from re import Pattern
+from typing import Any
+from collections.abc import Callable
 from datetime import date, datetime
 
 # --- Type Aliases ---
@@ -18,13 +18,26 @@ EMAIL_PATTERN: Pattern[str] = re.compile(r"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-z
 ID_NUMBER_PATTERN: Pattern[str] = re.compile(r'^(?:\d{9}|\d{12})$')
 YEAR_PATTERN: Pattern[str] = re.compile(r'^\d{4}$')
 NUMERIC_PATTERN: Pattern[str] = re.compile(r'^\d+$')
-DATE_FORMAT_STORAGE: str = '%Y-%m-%d' 
+DATE_FORMAT_STORAGE: str = '%Y-%m-%d'
 SALARY_PATTERN: Pattern[str] = re.compile(r"^\d+$|^\d{1,3}(?:[.,]\d{3})*$")
 DATE_MMYYYY_PATTERN: Pattern[str] = re.compile(r'^(0[1-9]|1[0-2])/\d{4}$')
 
 # ===================================================================
 # GENERIC VALIDATOR GENERATORS (Our Reusable Building Blocks)
 # ===================================================================
+
+def max_length(limit: int, message: str) -> ValidatorFunc:
+    """
+    Ensures a string value does not exceed a maximum length.
+    """
+    def validator(value: Any | None, form_data: dict[str, Any]) -> ValidationResult:
+        # This validator should only run if there is a value.
+        # It doesn't enforce that a value is required.
+        if value and isinstance(value, str):
+            if len(value) > limit:
+                return False, message
+        return True, ""
+    return validator
 
 def required(message: str = "Vui lòng không để trống trường này.") -> ValidatorFunc:
     """Ensures a value is not None, not an empty string, and not just whitespace."""
@@ -63,13 +76,17 @@ def is_within_date_range(
     message: str = "Ngày chọn nằm ngoài khoảng cho phép."
 ) -> ValidatorFunc:
     """Ensures a date string is within the specified min/max range."""
+
+    # Establish the actual max_date at call time
+    _max_date = max_date if max_date is not None else date.today()
+
     def validator(value: str | None, form_data: dict[str, Any]) -> ValidationResult:
         if not value:
             return True, ''
         try:
             dt_object = datetime.strptime(value, DATE_FORMAT_STORAGE).date()
             if (min_date and dt_object < min_date) or \
-               (max_date and dt_object > max_date):
+               (_max_date and dt_object > _max_date):
                 return False, message
         except ValueError:
             # This could happen if the date string is malformed, though your sync logic should prevent it.
@@ -82,9 +99,9 @@ def is_date_after(other_field_key: str, message: str) -> ValidatorFunc:
     Validates that a MM/YYYY date in one field comes after a MM/YYYY date
     in another field within the same row of data.
     """
-    def validator(value: Optional[str], row_data: Dict[str, Any]) -> ValidationResult:
+    def validator(value: str | None, row_data: dict[str, Any]) -> ValidationResult:
         # `value` is the 'work_to' date
-        other_value: str = cast(str, row_data.get(other_field_key))
+        other_value = row_data.get(other_field_key)
 
         # If either value is missing or not in the right format, another validator will catch it.
         if not value or not other_value or '/' not in value or '/' not in other_value:
@@ -95,7 +112,7 @@ def is_date_after(other_field_key: str, message: str) -> ValidatorFunc:
             to_month, to_year = map(int, value.split('/'))
             from_month, from_year = map(int, other_value.split('/'))
 
-            if to_year < from_year or (to_year==from_year and to_month < from_month):
+            if to_year < from_year or (to_year==from_year and to_month <= from_month):
                 return False, message
         except (ValueError, IndexError):
             return True, "" # Let the pattern validator handle format errors.

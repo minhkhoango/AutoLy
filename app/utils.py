@@ -1,10 +1,19 @@
-# utils.py
+# app/utils.py
 from __future__ import annotations
-from typing import Any, NotRequired, TypedDict
+from typing import (
+    Any, NotRequired, TypedDict,
+    TypeAlias,
+)
 from collections.abc import Callable
 from dataclasses import dataclass
-import para # Assuming para.py exists and might be used for defaults
-from form_data_builder import FormUseCaseType, FORM_TEMPLATE_REGISTRY
+
+from .para import (
+    vn_province, degrees, education_format,
+    education_high_school, ethnic_groups_vietnam,
+    religion, work_position, awards_titles
+)
+from .form_data_builder import FormUseCaseType, FORM_TEMPLATE_REGISTRY
+from .validation import ValidatorFunc
 
 # ===================================================================
 # 1. CORE DATA STRUCTURES & TYPE ALIASES
@@ -26,20 +35,49 @@ class FormField:
     options: list[str] | dict[str, str] | None = None
     split_date: bool = True # For PDF rendering
     default_value: Any = ''
-    
-    # NEW: Flag to control the visibility of the day selector in date inputs.
-    include_day: bool = True 
-
+    include_day: bool = True
     pdf_coords: dict[FormUseCaseType, tuple[float, float] | tuple[list[float], float]] | None = None
     pdf_columns: list[PDFColumn] | None = None
     row_schema: type | None = None
+    max_length: int | None = None
 
 class DataframePDFColumn(TypedDict):
     """Defines how to map a single dataframe column """
     key: str # The key from the form's dataframe row (work_task)
     pdf_field_prefix: str # The predfix for the pdf field (work_task_)
-    # The magic 
+    # The magic
     transformer: NotRequired[Callable[[dict[str, Any]], str]]
+
+SimpleValidatorEntry: TypeAlias = tuple[str, list[ValidatorFunc]]
+DataframeColumnRules: TypeAlias = dict[str, list[ValidatorFunc]]
+DataframeValidatorEntry: TypeAlias = tuple[str, DataframeColumnRules]
+ValidationEntry: TypeAlias = SimpleValidatorEntry | DataframeValidatorEntry
+
+class FieldConfig(TypedDict):
+    field: FormField
+    validators: list[ValidatorFunc]
+
+class DataframeConfig(TypedDict):
+    field: FormField
+    validators: DataframeColumnRules
+
+class PanelInfo(TypedDict):
+    label: str
+    fields: list[FieldConfig]
+
+class TabbedLayout(TypedDict):
+    type: str
+    tabs: dict[str, PanelInfo]
+
+class StepDefinition(TypedDict):
+    id: int
+    name: str
+    title: str
+    subtitle: str
+    fields: list[FieldConfig]
+    dataframes: list[DataframeConfig]
+    needs_clearance: bool | None
+    layout: NotRequired[TabbedLayout]
 
 # ===================================================================
 # 2. THE APPLICATION SCHEMA (Single Source of Truth)
@@ -53,46 +91,42 @@ class AppSchema:
     class TrainingRow:
         FROM = FormField(key='training_from', label='Từ (MM/YYYY)', ui_type='date', default_value=None, include_day=False)
         TO = FormField(key='training_to', label='Đến (MM/YYYY)', ui_type='date', default_value=None, include_day=False)
-        UNIT = FormField(key='training_unit', label='Tên trường/Cơ sở đào tạo', ui_type='text')
-        FIELD = FormField(key='training_field', label='Ngành học', ui_type='text')
-        FORMAT = FormField(key='training_format', label='Hình thức', ui_type='select', 
-                            options=getattr(para, 'education_format', ['Chính quy']), default_value='Chính quy')
-        CERTIFICATE = FormField(key='training_certificate', label='Văn bằng/Chứng chỉ', ui_type='select', options=getattr(para, 'degrees', 
-                            ['Không có']), default_value='Không có')
-    
+        UNIT = FormField(key='training_unit', label='Tên trường/Cơ sở đào tạo', ui_type='text', max_length=26)
+        FIELD = FormField(key='training_field', label='Ngành học', ui_type='text', max_length=21)
+        FORMAT = FormField(key='training_format', label='Hình thức', ui_type='select',
+                            options=education_format, default_value='Chính quy')
+        CERTIFICATE = FormField(key='training_certificate', label='Văn bằng/Chứng chỉ', ui_type='select', options=degrees, default_value='Không có')
+
     class WorkRow:
         FROM = FormField(key='work_from', label='Từ (MM/YYYY)', ui_type='date', default_value=None, include_day=False)
         TO = FormField(key='work_to', label='Đến (MM/YYYY)', ui_type='date', default_value=None, include_day=False)
-        UNIT = FormField(key='work_unit', label='Đơn vị công tác', ui_type='text')
-        ROLE = FormField(key='work_role', label='Chức vụ', ui_type='select', 
-                        options=getattr(para, 'work_position', ["Thực tập"]), default_value="Thực tập")
+        UNIT = FormField(key='work_unit', label='Đơn vị công tác', ui_type='text', max_length=50)
+        ROLE = FormField(key='work_role', label='Chức vụ', ui_type='select',
+                        options=work_position, default_value="Thực tập")
 
-    FULL_NAME = FormField(key='full_name', label='HỌ VÀ TÊN (viết hoa)',
+    FULL_NAME = FormField(key='full_name', label='HỌ VÀ TÊN (viết hoa)', max_length=30,
                           pdf_coords={FormUseCaseType.PRIVATE_SECTOR: (214.52, 179.88)})
     GENDER = FormField(key='gender', label='Giới tính', ui_type='radio', options=['Nam', 'Nữ'], default_value='Nam',
                        pdf_coords={FormUseCaseType.PRIVATE_SECTOR: (436.02, 179.88)})
     DOB = FormField(key='dob', label='Ngày sinh', ui_type='date', default_value=None,
                     pdf_coords={FormUseCaseType.PRIVATE_SECTOR: ([152.52, 202.02, 242.02], 201.5)})
-    BIRTH_PLACE = FormField(key='birth_place', label='Nơi sinh', ui_type='select', options=getattr(para, 'vn_province', ['Hà Nội']), default_value='Hà Nội',
+    BIRTH_PLACE = FormField(key='birth_place', label='Nơi sinh', ui_type='select', options=vn_province, default_value='Hà Nội',
                             pdf_coords={FormUseCaseType.PRIVATE_SECTOR: (332.06, 201.5)})
-    REGISTERED_ADDRESS = FormField(key='registered_address', label='Địa chỉ hộ khẩu', default_value='', 
+    REGISTERED_ADDRESS = FormField(key='registered_address', label='Địa chỉ hộ khẩu', default_value='', max_length=55,
                                    pdf_coords={FormUseCaseType.PRIVATE_SECTOR: (259.06, 244.83)})
-    PHONE = FormField(key='phone', label='Số điện thoại',
+    PHONE = FormField(key='phone', label='Số điện thoại', max_length=10,
                       pdf_coords={FormUseCaseType.PRIVATE_SECTOR: (209.06, 287.46)})
-    ETHNICITY = FormField(key='ethnicity', label='Dân tộc', ui_type='select', options=getattr(para, 'ethnic_groups_vietnam', ['Kinh']), default_value='Kinh',
+    ETHNICITY = FormField(key='ethnicity', label='Dân tộc', ui_type='select', options=ethnic_groups_vietnam, default_value='Kinh',
                           pdf_coords={FormUseCaseType.PRIVATE_SECTOR: (150.06, 309.56)})
-    RELIGION = FormField(key='religion', label='Tôn giáo', ui_type='select', options=getattr(para, 'religion', ['Không']), default_value='Không',
+    RELIGION = FormField(key='religion', label='Tôn giáo', ui_type='select', options=religion, default_value='Không',
                          pdf_coords={FormUseCaseType.PRIVATE_SECTOR: (312.06, 309.56)})
-    EDUCATION_HIGH_SCHOOL = FormField(key='education_high_school', label='Lộ trình hoàn thành cấp ba', ui_type='select', options=getattr(para, 'education_high_school', ['12/12']), default_value='12/12',
+    EDUCATION_HIGH_SCHOOL = FormField(key='education_high_school', label='Lộ trình hoàn thành cấp ba', ui_type='select', options=education_high_school, default_value='12/12',
                                       pdf_coords={FormUseCaseType.PRIVATE_SECTOR: (202.56, 352.56)})
-    AWARD = FormField(key='award', label='Khen thưởng', ui_type='select', options=getattr(para, 'awards_titles', ['Không có']), default_value='Không có',
+    AWARD = FormField(key='award', label='Khen thưởng', ui_type='select', options=awards_titles, default_value='Không có',
                       pdf_coords={FormUseCaseType.PRIVATE_SECTOR: (222.06, 417.06)})
-    DISCIPLINE = FormField(key='discipline', label='Kỷ luật', default_value='Không có',
+    DISCIPLINE = FormField(key='discipline', label='Kỷ luật', default_value='Không có', max_length=50,
                            pdf_coords={FormUseCaseType.PRIVATE_SECTOR: (377.06, 417.06)})
 
-    # Page 2 Fields (Dataframes)
-    # The coordinate is for the STARTING position of the first row.
-    # The rendering function will calculate the position of subsequent rows.
     TRAINING_DATAFRAME = FormField(
         key='training_dataframe', label='Quá trình đào tạo', ui_type='dataframe',
         row_schema=TrainingRow,
@@ -120,33 +154,10 @@ class AppSchema:
         ]
     )
 
-    # --- Fields that are in the UI but NOT rendered on this specific PDF ---
-    # They have no `pdf_coords` or `pdf_columns`.
     FORM_TEMPLATE_SELECTOR = FormField(key='form_template_selector', label='Tổ chức bạn đang nộp hồ sơ cho:', ui_type='radio',
         options={use_case.name: template['name'] for use_case, template in FORM_TEMPLATE_REGISTRY.items()},
-        # Set a valid default value. We'll default to the first one in the registry.
         default_value=next(iter(FORM_TEMPLATE_REGISTRY.keys())).name
     )
-    
-    ### FIELD NOT USED IN THE PRIVATE-TEMPLATE - ONLY FOCUS ON TEMPLATE-PRIVATE FOR THE MVP ###
-    ID_PASSPORT_NUM = FormField(key='id_passport_num', label='Số CMND/CCCD') # Example, assuming not on private cv
-    ID_PASSPORT_ISSUE_DATE = FormField(key='id_passport_issue_date', label='Ngày cấp', ui_type='date', default_value=None)
-    ID_PASSPORT_ISSUE_PLACE = FormField(key='id_passport_issue_place', label='Nơi cấp')
-    PLACE_OF_ORIGIN = FormField(key='place_of_origin', label='Nguyên quán (quê của bố)')
-    YOUTH_DATE = FormField(key='youth_date', label='Ngày kết nạp Đoàn', ui_type='date', default_value=None)
-    PARTY_DATE = FormField(key='party_date', label='Ngày kết nạp Đảng', ui_type='date', default_value=None)
-    DAD_NAME = FormField(key='dad_name', label='Họ tên Bố')
-    DAD_AGE = FormField(key='dad_dob_year', label='Năm sinh Bố')
-    DAD_JOB = FormField(key='dad_job', label='Nghề nghiệp Bố')
-    MOM_NAME = FormField(key='mom_name', label='Họ tên Mẹ')
-    MOM_AGE = FormField(key='mom_dob_year', label='Năm sinh Mẹ')
-    MOM_JOB = FormField(key='mom_job', label='Nghề nghiệp Mẹ')
-    EMERGENCY_CONTACT_DETAILS = FormField(key='emergency_contact', label='Khi cần báo tin cho')
-    EMERGENCY_CONTACT_PLACE = FormField(key='emergency_place', label='Địa chỉ báo tin')
-    SAME_ADDRESS_AS_REGISTERED = FormField(key='same_address_as_registered', label='Nơi báo tin giống địa chỉ hộ khẩu', ui_type='checkbox')
-    SIBLING_DATAFRAME = FormField(key='sibling_dataframe', label='Thông tin anh chị em')
-    CHILD_DATAFRAME = FormField(key='child_dataframe', label='Thông tin con cái')
-    ### FIELD NOT USED, MAYBE NEEDED LATER ### 
 
     @classmethod
     def get_all_fields(cls) -> list[FormField]:
@@ -159,14 +170,9 @@ class AppSchema:
 # 3. CENTRALIZED CONSTANTS & SESSION MANAGEMENT
 # ===================================================================
 
-# --- Session Storage Keys ---
 STEP_KEY: str = 'step'
 FORM_DATA_KEY: str = 'form_data'
 SELECTED_USE_CASE_KEY: str = 'selected_use_case'
 FORM_ATTEMPTED_SUBMISSION_KEY: str = 'form_attempted_submission'
 CURRENT_STEP_ERRORS_KEY: str = 'current_step_errors'
-
-# --- Date Formats ---
 DATE_FORMAT_STORAGE: str = '%Y-%m-%d'
-
-    

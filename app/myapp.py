@@ -3,37 +3,31 @@
 # ===================================================================
 import sqlite3
 import json
+import base64
 import os
 import logging
 from pathlib import Path
 from passlib.context import CryptContext
 import calendar
 from nicegui import ui, app
-from typing import (
-    Any, TypedDict,
-    TypeAlias, cast
-)
+from typing import Any, cast
 from collections.abc import Callable
 import fitz
 import tempfile
-from typing_extensions import NotRequired
 from datetime import datetime, date
 
 # Local application imports
-from validation import (
-    ValidatorFunc, required, required_choice, match_pattern, is_within_date_range, is_date_after, EMAIL_PATTERN,
-    FULL_NAME_PATTERN, PHONE_PATTERN, NUMERIC_PATTERN, DATE_MMYYYY_PATTERN
-)
-from form_data_builder import FormUseCaseType, FormTemplate, FORM_TEMPLATE_REGISTRY
-from utils import (
+from .validation import ValidatorFunc, EMAIL_PATTERN
+from .form_data_builder import FormUseCaseType, FormTemplate, FORM_TEMPLATE_REGISTRY
+from .utils import (
     AppSchema, FormField, STEP_KEY, SELECTED_USE_CASE_KEY,
-    FORM_ATTEMPTED_SUBMISSION_KEY, CURRENT_STEP_ERRORS_KEY
+    FORM_ATTEMPTED_SUBMISSION_KEY, CURRENT_STEP_ERRORS_KEY,
+    DataframeConfig, StepDefinition, DataframeColumnRules
 )
+from .step_definitions import STEPS_BY_ID
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
-
-
 # ===================================================================
 # 2. DATABASE SETUP (The Stone Tablet)
 # ===================================================================
@@ -127,25 +121,6 @@ def save_form_data_to_db() -> None:
 # 4. CORE LOGIC & NAVIGATION (With DB Persistence)
 # ===================================================================
 
-# --- Type Definitions (from your original file) ---
-SimpleValidatorEntry: TypeAlias = tuple[str, list[ValidatorFunc]]
-DataframeColumnRules: TypeAlias = dict[str, list[ValidatorFunc]]
-DataframeValidatorEntry: TypeAlias = tuple[str, DataframeColumnRules]
-ValidationEntry: TypeAlias = SimpleValidatorEntry | DataframeValidatorEntry
-class FieldConfig(TypedDict):
-    field: FormField; validators: list[ValidatorFunc]
-class DataframeConfig(TypedDict):
-    field: FormField; validators: DataframeColumnRules
-class PanelInfo(TypedDict):
-    label: str; fields: list[FieldConfig]
-class TabbedLayout(TypedDict):
-    type: str; tabs: dict[str, PanelInfo]
-class StepDefinition(TypedDict):
-    id: int; name: str; title: str; subtitle: str
-    render_func: Callable[['StepDefinition'], None]
-    fields: list[FieldConfig]; dataframes: list[DataframeConfig]
-    needs_clearance: bool | None; layout: NotRequired[TabbedLayout]
-
 # --- Validation Helpers (from your original file) ---
 def _validate_simple_field(field_key: str, validator_list: list[ValidatorFunc], form_data: dict[str, Any], errors: dict[str, str]) -> bool:
     is_field_valid = True
@@ -222,46 +197,63 @@ def _get_current_form_template() -> FormTemplate | None:
         return FORM_TEMPLATE_REGISTRY.get(selected_use_case)
     except KeyError: return None
 
+def calculate_next_step_id(current_step_id: int, form_template: FormTemplate | None) -> int:
+    """Calculates the ID of the next step in the sequence."""
+    if not form_template:
+        return 0
+    
+    step_sequence: list[int] = form_template['step_sequence']
+    if not step_sequence:
+        return 0
+    
+    if current_step_id == 0:
+        return step_sequence[0]
+
+    try:
+        current_index: int = step_sequence.index(current_step_id)
+        if current_index < len(step_sequence) - 1:
+            return step_sequence[current_index + 1]
+        return current_step_id # Stay on the last step if there's no next one
+    except ValueError:
+        return 0 # Go to start if current step isn't in sequence
+
+def calculate_prev_step_id(current_step_id: int, form_template: FormTemplate | None) -> int:
+    """Calculates the ID of the previous step in the sequence."""
+    if not form_template or current_step_id == 0:
+        return 0
+
+    step_sequence: list[int] = form_template['step_sequence']
+    try:
+        current_index: int = step_sequence.index(current_step_id)
+        return step_sequence[current_index - 1] if current_index > 0 else 0
+    except ValueError:
+        return 0
+
 def next_step() -> None:
     form_data = get_form_data()
-    current_step_id = form_data.get(STEP_KEY, 0)
     form_template = _get_current_form_template()
-    if form_template:
-        step_sequence = form_template['step_sequence']
-        if current_step_id == 0:
-            form_data[STEP_KEY] = step_sequence[0] if step_sequence else 0
-        else:
-            try:
-                current_index = step_sequence.index(current_step_id)
-                if current_index < len(step_sequence) - 1:
-                    form_data[STEP_KEY] = step_sequence[current_index + 1]
-            except ValueError: form_data[STEP_KEY] = 0
-    else: form_data[STEP_KEY] = 0
+
+    current_step_id = form_data.get(STEP_KEY, 0)
+    next_step_id: int = calculate_next_step_id(current_step_id, form_template)
+    
+    form_data[STEP_KEY] = next_step_id
     form_data[FORM_ATTEMPTED_SUBMISSION_KEY] = False
-    save_form_data_to_db() # Persist the new step
     update_step_content.refresh()
 
 def prev_step() -> None:
     form_data = get_form_data()
-    current_step_id = form_data.get(STEP_KEY, 0)
     form_template = _get_current_form_template()
-    if form_template:
-        step_sequence = form_template['step_sequence']
-        try:
-            current_index = step_sequence.index(current_step_id)
-            form_data[STEP_KEY] = step_sequence[current_index - 1] if current_index > 0 else 0
-        except ValueError: form_data[STEP_KEY] = 0
-    else: form_data[STEP_KEY] = 0
+    
+    current_step_id = form_data.get(STEP_KEY, 0)
+    prev_step_id: int = calculate_prev_step_id(current_step_id, form_template)
+
+    form_data[STEP_KEY] = prev_step_id
     form_data[FORM_ATTEMPTED_SUBMISSION_KEY] = False
-    save_form_data_to_db()
     update_step_content.refresh()
 
 # ===================================================================
 # 5. UI RENDERING & PDF (Unchanged Logic, but now reads from DB via helpers)
 # ===================================================================
-# --- Your PDF and UI rendering functions go here ---
-# They don't need to change because they use get_form_data(), which now reads from the DB.
-# (Pasting your functions from the provided file for completeness)
 
 def render_text_on_pdf(
     template_path: Path,
@@ -275,7 +267,7 @@ def render_text_on_pdf(
     """
     try:
         # 1. --- SETUP ---
-        PROJECT_ROOT = Path(__file__).resolve().parent.parent
+        PROJECT_ROOT: Path = Path(__file__).resolve().parent.parent
         FONT_PATH: str = str(PROJECT_ROOT / "assets" / "NotoSans-Regular.ttf")
         # We now know the original template is fine, no need for the "-CLEAN" version.
         TEMPLATE_FILE: Path = template_path 
@@ -356,55 +348,6 @@ def render_text_on_pdf(
         import traceback
         traceback.print_exc()
         raise
-
-
-async def create_and_download_pdf(button: ui.button) -> None:
-    button.disable()
-    output_pdf_path_obj = None
-    try:
-        form_data = get_form_data()
-        selected_use_case_name = form_data.get(SELECTED_USE_CASE_KEY)
-        if not selected_use_case_name:
-            ui.notify("Lỗi: Không xác định được loại hồ sơ.", type='negative')
-            return
-
-        selected_use_case = FormUseCaseType[selected_use_case_name]
-        form_template = FORM_TEMPLATE_REGISTRY.get(selected_use_case)
-        if not form_template:
-            ui.notify("Lỗi: Không tìm thấy blueprint cho hồ sơ.", type='negative')
-            return
-
-        template_path_obj = Path(form_template['pdf_template_path'])
-        if not template_path_obj.exists():
-            ui.notify(f"Lỗi: Không tìm thấy file mẫu PDF tại '{template_path_obj}'.", type='negative')
-            return
-
-        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmpfile_obj:
-            output_pdf_path_obj = Path(tmpfile_obj.name)
-
-        render_text_on_pdf(
-            template_path=template_path_obj,
-            form_data=form_data,
-            form_template=form_template,
-            output_path=output_pdf_path_obj
-        )
-
-        pdf_content_bytes: bytes = output_pdf_path_obj.read_bytes()
-        ui.download(src=pdf_content_bytes, filename="SoYeuLyLich_DaDien.pdf")
-        ui.notify("Đã tạo PDF thành công!", type='positive')
-
-    except Exception as e:
-        print(f"Lỗi nghiêm trọng khi tạo PDF: {e}")
-        import traceback
-        traceback.print_exc()
-        ui.notify(f"Đã xảy ra lỗi khi tạo PDF. Chi tiết: {e}", type='negative', multi_line=True)
-    finally:
-        button.enable()
-        if output_pdf_path_obj and output_pdf_path_obj.exists():
-            try:
-                output_pdf_path_obj.unlink()
-            except Exception as e_del:
-                print(f"Lỗi khi xóa file tạm: {e_del}")
 
 # ===================================================================
 # 4. UI RENDERING ENGINE
@@ -578,25 +521,25 @@ def _create_composite_date_input(
             is_y_error = form_attempted and current_errors.get(error_key) and not state['y']
             ui.select(list(range(date.today().year, 1900, -1)), value=state['y'], label='Năm', on_change=handle_year_select).classes('col').props(f"outlined dense error={is_y_error}")
 
-def create_text_input(f: FormField, v: Any, data_source: dict[str, Any]) -> ui.input:
+def _create_text_input(f: FormField, v: Any, data_source: dict[str, Any]) -> ui.input:
     """Creates a standard text input field bound to the data source."""
     return ui.input(label=f.label, value=v, on_change=lambda e: data_source.update({f.key: e.value}))
 
-def create_select_input(f: FormField, v: Any, data_source: dict[str, Any]) -> ui.select:
+def _create_select_input(f: FormField, v: Any, data_source: dict[str, Any]) -> ui.select:
     """Creates a dropdown select field bound to the data source."""
     # assert type(f.options) == dict[str, str]
     return ui.select(options=f.options or [], label=f.label, value=v, on_change=lambda e: data_source.update({f.key: e.value}))
 
-def create_radio_buttons(f: FormField, v: Any, data_source: dict[str, Any]) -> ui.radio:
+def _create_radio_buttons(f: FormField, v: Any, data_source: dict[str, Any]) -> ui.radio:
     """Creates a set of radio buttons bound to the data source."""
     # assert type(f.options) == dict[str, str]
     return ui.radio(options=f.options or [], value=v, on_change=lambda e: data_source.update({f.key: e.value}))
 
-def create_textarea_input(f: FormField, v: Any, data_source: dict[str, Any]) -> ui.textarea:
+def _create_textarea_input(f: FormField, v: Any, data_source: dict[str, Any]) -> ui.textarea:
     """Creates a multi-line text area bound to the data source."""
     return ui.textarea(label=f.label, value=v, on_change=lambda e: data_source.update({f.key: e.value}))
 
-def create_checkbox_input(f: FormField, v: Any, data_source: dict[str, Any]) -> ui.checkbox:
+def _create_checkbox_input(f: FormField, v: Any, data_source: dict[str, Any]) -> ui.checkbox:
     """Creates a checkbox bound to the data source."""
     return ui.checkbox(text=f.label, value=bool(v), on_change=lambda e: data_source.update({f.key: e.value}))
 
@@ -635,21 +578,25 @@ def create_field(field_definition: FormField,
         else:
             # --- Element Creator Map ---
             creator_map: dict[str, Callable[..., Any]] = {
-                'text': create_text_input,
-                'select': create_select_input,
-                'radio': create_radio_buttons,
-                'textarea': create_textarea_input,
-                'checkbox': create_checkbox_input,
+                'text': _create_text_input,
+                'select': _create_select_input,
+                'radio': _create_radio_buttons,
+                'textarea': _create_textarea_input,
+                'checkbox': _create_checkbox_input,
             }
             creator = creator_map.get(field_definition.ui_type)
-            if not creator:
-                raise ValueError(f"Unsupported UI type: {field_definition.ui_type}")
+            if not creator: raise ValueError(f"Unsupported UI type: {field_definition.ui_type}")
 
-            # Create the element, now explicitly passing all dependencies.
             element = creator(field_definition, current_value, data_source)
-
-            if field_definition.ui_type != 'date':
-                element.props(f"outlined dense error-message='{error_message or ""}' error={has_error}").classes('w-full')
+            props_list: list[str] = ['outlined', 'dense']
+            if field_definition.max_length:
+                props_list.append(f"maxlength={field_definition.max_length}")
+            if has_error:
+                props_list.append(f"error-message='{error_message or ""}'")
+                props_list.append('error')
+            
+            if field_definition.ui_type != 'checkbox':
+                element.props(' '.join(props_list)).classes('w-full')
 
 # --- Generic step renderer now uses the new dataframe renderer ---
 def render_generic_step(step_def: StepDefinition) -> None:
@@ -677,71 +624,138 @@ def render_generic_step(step_def: StepDefinition) -> None:
         confirm_button = ui.button("Xác nhận & Tiếp tục →").props('color=primary unelevated')
         confirm_button.on('click', lambda: _handle_step_confirmation(confirm_button))
 
+def _generate_pdf_bytes(form_data: dict[str, Any]) -> bytes | None:
+    """
+    Generates the PDF from form_data and returns it as a bytes object.
+    This is the core, reusable PDF generation logic.
+    Returns None if generation fails.
+    """
+    try:
+        selected_use_case_name: str = form_data.get(SELECTED_USE_CASE_KEY, '')
+        if not selected_use_case_name:
+            ui.notify("Lỗi: Không xác định được loại hồ sơ.", type='negative')
+            return None
+        selected_use_case: FormUseCaseType = FormUseCaseType[selected_use_case_name]
+        form_template: FormTemplate | None = FORM_TEMPLATE_REGISTRY.get(selected_use_case)
+        if not form_template:
+            ui.notify("Lỗi: Không tìm thấy blueprint cho hồ sơ.", type='negative')
+            return None
+
+        template_path_obj = Path(form_template['pdf_template_path'])
+        if not template_path_obj.exists():
+            ui.notify(f"Lỗi: Không tìm thấy file mẫu PDF tại '{template_path_obj}'.", type='negative')
+            return None
+        
+        # Use an in-memory buffer instead of a temporary file
+        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=True) as tmpfile:
+            output_path = Path(tmpfile.name)
+            render_text_on_pdf(
+                template_path=template_path_obj,
+                form_data=form_data,
+                form_template=form_template,
+                output_path=output_path
+            )
+            return output_path.read_bytes()
+
+    except Exception as e:
+        logger.error(f"Lỗi nghiêm trọng khi tạo PDF: {e}", exc_info=True)
+        ui.notify(f"Đã xảy ra lỗi khi tạo PDF. Chi tiết: {e}", type='negative', multi_line=True)
+        return None
+
+async def create_and_download_pdf(button: ui.button) -> None:
+    button.disable()
+    try:
+        form_data = get_form_data()
+        pdf_bytes = _generate_pdf_bytes(form_data)
+
+        if pdf_bytes:
+            ui.download(src=pdf_bytes, filename="SoYeuLyLich_DaDien.pdf")
+            ui.notify("Đã tạo PDF thành công!", type='positive')
+    finally:
+        button.enable()
+
 def render_review_step(step_def: 'StepDefinition') -> None:
-    """A special renderer for the final review step."""
+    """A special renderer for the final review step with a PDF preview. This version is Pylance-strict."""
     ui.label(step_def['title']).classes('text-h6 q-mb-md')
     ui.markdown(step_def['subtitle'])
-    ui.label("Review UI is under construction.").classes('text-center text-grey')
 
-    pdf_button = ui.button("Tạo PDF").props('color=green unelevated').classes('q-mt-md q-mb-lg')
-    pdf_button.on('click', lambda: create_and_download_pdf(pdf_button))
-    with ui.row().classes('w-full justify-start items-center'):
+    preview_container = ui.card().classes('w-full shadow-2').style('height: 65vh; padding: 0;')
+    with preview_container:
+        with ui.column().classes('w-full h-full items-center justify-center'):
+            ui.icon('visibility', size='xl', color='grey-5')
+            ui.label('Bản xem trước PDF sẽ xuất hiện ở đây').classes('text-grey')
+
+    pdf_state: dict[str, bytes | None] = {'bytes': None}
+
+    async def show_preview(download_button: ui.button) -> None:
+        """Generates the PDF and displays it in a full-size iframe."""
+        preview_button.disable()
+        pdf_bytes = _generate_pdf_bytes(get_form_data())
+
+        if not pdf_bytes:
+            ui.notify("Không thể tạo bản xem trước.", type='negative')
+            preview_button.enable()
+            return
+        
+        pdf_state['bytes'] = pdf_bytes
+        base64_pdf = base64.b64encode(pdf_bytes).decode('utf-8')
+        data_url = f'data:application/pdf;base64,{base64_pdf}'
+
+        preview_container.clear()
+        with preview_container:
+            # h-full = 100% height, w-5/6 = 83.33% width.
+            html_content = f'<iframe src="{data_url}" style="width: 100%; height: 100%; border: none;"></iframe>'
+            ui.html(html_content).classes('h-full w-5/6 mx-auto')
+        
+        download_button.set_visibility(True)
+        # Change the preview button's text and icon after first use.
+        preview_button.props('icon=refresh')
+        preview_button.text = 'Tạo lại bản xem trước'
+        ui.notify("Đã tạo bản xem trước thành công.", type='positive')
+        preview_button.enable()
+
+    def download_action() -> None:
+        """Type-safe download handler."""
+        if pdf_state['bytes'] is not None:
+            ui.download(pdf_state['bytes'], 'SoYeuLyLich_DaDien.pdf')
+        else:
+            ui.notify("Lỗi: Không có file PDF để tải xuống.", type='negative')
+
+    # --- Layout for buttons ---
+    with ui.row().classes('w-full q-mt-md justify-between items-center'):
         ui.button("← Quay lại & Chỉnh sửa", on_click=lambda: prev_step()).props('flat color=grey')
+
+        with ui.row().classes('items-center no-wrap q-gutter-md'):
+            # The download button is created here but invisible initially.
+            download_button = ui.button("Tải xuống PDF", on_click=download_action)
+            download_button.props('color=green unelevated icon=download').set_visibility(False)
+
+            # The preview button triggers the process.
+            preview_button = ui.button("Xem trước", on_click=lambda: show_preview(download_button))
+            preview_button.props('color=primary unelevated icon=visibility')
+
 
 # ===================================================================
 # 5. DEFINE THE BLUEPRINT & NAVIGATION ENGINE
-# ===================================================================
-age_validators: list[ValidatorFunc] = [required("Vui lòng điền năm sinh."), match_pattern(NUMERIC_PATTERN, "Năm sinh phải là một con số.")]
-
-STEPS_BY_ID: dict[int, StepDefinition] = {
-    0: {'id': 0, 'name': 'dossier_selector', 'title': 'Chọn Loại Hồ Sơ', 'subtitle': 'Chọn loại hồ sơ bạn cần, hệ thống sẽ tạo các bước cần thiết.', 'render_func': render_generic_step, 'fields': [{'field': AppSchema.FORM_TEMPLATE_SELECTOR, 'validators': [required_choice("Vui lòng chọn một loại hồ sơ.")]}], 'dataframes': [], 'needs_clearance': None},
-    1: {'id': 1, 'name': 'core_identity', 'title': 'Thông tin cá nhân', 'subtitle': 'Thông tin định danh cơ bản của bạn.', 'render_func': render_generic_step, 'needs_clearance': None, 'fields': [
-        {'field': AppSchema.FULL_NAME, 'validators': [required("Vui lòng điền họ tên."), match_pattern(FULL_NAME_PATTERN, "Họ tên phải viết hoa.")]},
-        {'field': AppSchema.GENDER, 'validators': [required_choice("Vui lòng chọn giới tính.")]},
-        {'field': AppSchema.DOB, 'validators': [required('Vui lòng điền ngày sinh.'), is_within_date_range()]},
-        {'field': AppSchema.BIRTH_PLACE, 'validators': [required("Vui lòng chọn nơi sinh.")]}
-    ], 'dataframes': []},
-    3: {'id': 3, 'name': 'contact', 'title': 'Địa chỉ & liên lạc', 'subtitle': 'Địa chỉ và số điện thoại để liên lạc khi cần.', 'render_func': render_generic_step, 'needs_clearance': None, 'fields': [
-        {'field': AppSchema.REGISTERED_ADDRESS, 'validators': [required("Vui lòng điền địa chỉ hộ khẩu.")]},
-        {'field': AppSchema.PHONE, 'validators': [required('Vui lòng điền số điện thoại.'), match_pattern(PHONE_PATTERN, "Số điện thoại không hợp lệ.")]}
-    ], 'dataframes': []},
-    5: {'id': 5, 'name': 'education', 'title': 'Học vấn & Chuyên môn', 'subtitle': 'Quá trình học tập và đào tạo.', 'render_func': render_generic_step, 'needs_clearance': None, 'fields': [{'field': AppSchema.EDUCATION_HIGH_SCHOOL, 'validators': [required_choice("Vui lòng chọn lộ trình học cấp ba.")]}], 'dataframes': [
-        {
-            # Just point to the field in AppSchema. No more column definitions here!
-            'field': AppSchema.TRAINING_DATAFRAME,
-            # Validators are step-specific, so they stay here.
-            'validators': {
-                'training_from': [required('Điền thời gian bắt đầu.'), match_pattern(DATE_MMYYYY_PATTERN, 'Dùng định dạng MM/YYYY')],
-                'training_to': [required('Điền thời gian kết thúc.'), match_pattern(DATE_MMYYYY_PATTERN, 'Dùng định dạng MM/YYYY'), is_date_after('training_from', 'Ngày kết thúc phải sau ngày bắt đầu.')],
-                'training_unit': [required('Điền tên trường.')],
-                'training_field': [required('Điền ngành học.')],
-            }
-        }
-    ]},
-    6: {'id': 6, 'name': 'work_history', 'title': 'Quá trình Công tác', 'subtitle': 'Liệt kê quá trình làm việc, bắt đầu từ gần nhất.', 'render_func': render_generic_step, 'needs_clearance': None, 'fields': [], 'dataframes': [
-        {
-            'field': AppSchema.WORK_DATAFRAME,
-            'validators': {
-                'work_from': [required('Điền thời gian bắt đầu.'), match_pattern(DATE_MMYYYY_PATTERN, 'Dùng định dạng MM/YYYY')],
-                'work_to': [required('Điền thời gian kết thúc.'), match_pattern(DATE_MMYYYY_PATTERN, 'Dùng định dạng MM/YYYY'), is_date_after('work_from', 'Ngày kết thúc phải sau ngày bắt đầu.')],
-                'work_unit': [required('Điền đơn vị.')],
-            }
-        }
-    ]},
-    # ... (rest of the steps are unchanged) ...
-    7: {'id': 7, 'name': 'awards', 'title': 'Khen thưởng & Kỷ luật', 'subtitle': 'Thông tin về khen thưởng và kỷ luật (nếu có).', 'render_func': render_generic_step, 'needs_clearance': None, 'fields': [{'field': AppSchema.AWARD, 'validators': [required_choice("Vui lòng chọn khen thưởng.")]}, {'field': AppSchema.DISCIPLINE, 'validators': []}], 'dataframes': []},
-    16: {'id': 16, 'name': 'review', 'title': 'Xem lại & Hoàn tất', 'subtitle': 'Kiểm tra lại toàn bộ thông tin và tạo file PDF.', 'render_func': render_review_step, 'needs_clearance': None, 'fields': [], 'dataframes': []},
-}
- 
+# =================================================================== 
 @ui.refreshable
 def update_step_content() -> None:
+    """
+    This function now acts as the controller. It fetches the step data,
+    inspects it, and decides which rendering function to call.
+    """
     form_data = get_form_data()
     current_step_id: int = form_data.get(STEP_KEY, 0)
     step_to_render = STEPS_BY_ID.get(current_step_id)
-    if step_to_render:
-        step_to_render['render_func'](step_to_render)
-    else:
+    if not step_to_render:
         ui.label(f"Lỗi: Bước không xác định ({current_step_id})").classes('text-negative text-h6')
+        return
+    # The application, not the data, decides how to render.
+    # This is the new logic.
+    if step_to_render.get('name') == 'review':
+        render_review_step(step_to_render)
+    else:
+        render_generic_step(step_to_render)
 
 # ===================================================================
 # 6. PAGE ROUTING & AUTH (Now DB-driven)
@@ -870,13 +884,12 @@ def main_page() -> None:
             ui.label(f"Xin chào, {get_current_user()}!").classes('q-mr-md')
             ui.button('Đăng xuất', on_click=logout, color='white', icon='logout').props('flat dense')
     
-    with ui.card().classes('q-mx-auto q-my-md q-pa-md shadow-4').style('width: 95%; max-width: 900px;'):
-        with ui.column().classes('w-full'):
-            update_step_content()
+    with ui.column().classes('w-full h-screen items-center justify-center'):
+        with ui.card().classes('q-pa-md shadow-4').style('width: 95%; max-width: 900px;'):
+            with ui.column().classes('w-full'):
+                update_step_content()
 
 if __name__ in {"__main__", "__mp_main__"}:
-    # This is the most important new step.
-    # We set up the database before the app starts listening for requests.
     setup_database()
 
     port = int(os.environ.get('PORT', 8080))
@@ -885,4 +898,3 @@ if __name__ in {"__main__", "__mp_main__"}:
         port=port,
         storage_secret=os.environ.get('STORAGE_SECRET', 'a_very_secure_secret_key_for_local_dev')
     )
-
