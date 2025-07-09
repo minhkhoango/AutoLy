@@ -1,0 +1,21 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Databases
+*.db
+*.sqlite3
+
+# Virtual Environments
+.venv/
+venv/
+env/
+
+# Test artifacts
+.pytest_cache/
+pytest.ini
+/tests/.pytest_cache/
+
+# NiceGUI
+.nicegui/
